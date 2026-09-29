@@ -104,12 +104,17 @@ def cmd_check(a):
 
 
 def cmd_overseas(a):
-    need = overseas.estimate_units(len(a.regions), a.keywords, not a.no_search, a.type)
+    need = overseas.estimate_units(a.regions, a.keywords, not a.no_search)
     kind_name = {"all": "쇼츠+롱폼", "shorts": "쇼츠", "long": "롱폼"}[a.type]
     print(f"{', '.join(overseas.REGIONS[r][1] for r in a.regions)} · {kind_name} · 최근 {a.days}일"
           f" · 조회수 {a.min_views:,} 이상 (캐시가 없으면 약 {need:,}유닛 사용)")
+    plan = overseas.search_plan(a.regions, a.keywords, not a.no_search)
+    if plan:
+        print("검색어: " + ", ".join(dict.fromkeys(q for q, _, _ in plan)))
+    if not a.all_categories:
+        print("분야: 예능·코미디·인물/블로그만 (영화·예고편·뮤직비디오·게임·뉴스 제외)")
     rows = overseas.collect(a.regions, a.keywords, a.days, a.min_views, a.sort, not a.no_search, a.refresh,
-                            a.type, a.include_music)
+                            a.type, a.all_categories)
     sort_name = {"views": "조회수", "vph": "시간당 조회수", "outlier": "구독자 대비 배수"}[a.sort]
     n_short = sum(r["kind"] == "쇼츠" for r in rows)
     print(f"\n해외에서 터진 영상 {len(rows)}개 (쇼츠 {n_short} · 롱폼 {len(rows) - n_short}, {sort_name} 순)\n")
@@ -268,14 +273,15 @@ def main():
                     help="all 쇼츠+롱폼 / shorts 쇼츠만 / long 롱폼만")
     ov.add_argument("--regions", nargs="+", choices=list(overseas.REGIONS), default=list(overseas.REGIONS),
                     help="볼 나라 (KR 한국, US 미국, GB 영국)")
-    ov.add_argument("--keywords", nargs="+", help="이 키워드로 검색 (없으면 #shorts 로 검색)")
-    ov.add_argument("--days", type=int, default=7, help="최근 며칠 안에 올라온 영상")
+    ov.add_argument("--keywords", nargs="+", help="검색어 직접 지정 (없으면 예능·시트콤·몰카·아이돌·토크쇼 기본 검색어)")
+    ov.add_argument("--days", type=int, default=14, help="최근 며칠 안에 올라온 영상")
     ov.add_argument("--min-views", type=int, default=500000, help="이 조회수보다 적으면 제외")
     ov.add_argument("--sort", choices=["views", "vph", "outlier"], default="views",
                     help="정렬: views 조회수 / vph 시간당 조회수 / outlier 구독자 대비 배수")
     ov.add_argument("--top", type=int, default=30, help="화면에 보여줄 개수")
-    ov.add_argument("--no-search", action="store_true", help="검색 없이 인기 차트만 (나라당 약 15유닛)")
-    ov.add_argument("--include-music", action="store_true", help="뮤직비디오도 포함 (기본은 제외)")
+    ov.add_argument("--no-search", action="store_true", help="검색 없이 인기 차트만 (나라당 약 15유닛, 결과 적음)")
+    ov.add_argument("--all-categories", action="store_true",
+                    help="분야 거르기 끄기 (영화·예고편·뮤직비디오 등도 포함)")
     ov.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     ov.set_defaults(func=cmd_overseas)
     jc = sub.add_parser("jpcheck", help="한국·미국 인기 쇼츠의 일본판이 있는지 확인 (Claude 사용)")

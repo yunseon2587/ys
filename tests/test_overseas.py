@@ -41,16 +41,35 @@ class OverseasTest(unittest.TestCase):
         only_long = overseas.collect(["KR", "US"], min_views=0, kind="long")
         self.assertEqual([r["video_id"] for r in only_long], ["v4"])
 
-    def test_music_excluded_by_default(self, _):
-        with mock.patch.dict("tests.fake_youtube.CATEGORY", {"v2": "10"}):
+    def test_only_fun_categories(self, _):
+        with mock.patch.dict("tests.fake_youtube.CATEGORY", {"v2": "10", "v5": "1", "v1": "23"}):
             ids = [r["video_id"] for r in overseas.collect(["KR", "US"], min_views=0)]
-            self.assertNotIn("v2", ids)
-            ids = [r["video_id"] for r in overseas.collect(["KR", "US"], min_views=0, include_music=True)]
+            self.assertNotIn("v2", ids)   # 음악(뮤직비디오)
+            self.assertNotIn("v5", ids)   # 영화·애니메이션(예고편)
+            self.assertIn("v1", ids)      # 코미디
+            ids = [r["video_id"] for r in overseas.collect(["KR", "US"], min_views=0, all_categories=True)]
             self.assertIn("v2", ids)
+
+    def test_blocked_titles(self, _):
+        videos = {**fake_youtube.VIDEOS, "v1": ("SQUID GAME 3 | Official Trailer", "c1", 10, "PT45S", 2_000_000),
+                  "v2": ("Funny Indian wedding", "c2", 48, "PT30S", 500_000)}
+        with mock.patch.dict("tests.fake_youtube.VIDEOS", videos):
+            ids = [r["video_id"] for r in overseas.collect(["KR", "US"], min_views=0)]
+        self.assertNotIn("v1", ids)
+        self.assertNotIn("v2", ids)
+        self.assertIsNone(overseas.BLOCKED_TITLE.search("Indiana Jones prank"))
+        self.assertIsNone(overseas.BLOCKED_TITLE.search("The Office funniest moments"))
+
+    def test_search_plan(self, _):
+        plan = overseas.search_plan(["KR", "US", "GB"])
+        self.assertEqual(len(plan), 8)                               # 한국 4 + 영어 4 (미국·영국 공통)
+        self.assertEqual({r for _, _, r in plan}, {"KR", "US"})
+        self.assertEqual(overseas.search_plan(["GB"], ["prank"]), [("prank", "en", "GB")])
+        self.assertEqual(overseas.search_plan(["KR"], use_search=False), [])
 
     def test_short_horizontal_video_is_not_shorts(self, _):
         # 3분 이하라도 가로 영상(뮤직비디오 등)이면 쇼츠가 아님
-        with mock.patch.dict("tests.fake_youtube.VIDEOS", {"v2": ("MV", "c2", 48, "PT2M50S", 500_000)}), \
+        with mock.patch.dict("tests.fake_youtube.VIDEOS", {"v2": ("Funny clip", "c2", 48, "PT2M50S", 500_000)}), \
                 mock.patch("tests.fake_youtube.HORIZONTAL", {"v2", "v4"}):
             rows = {r["video_id"]: r for r in overseas.collect(["KR", "US"], min_views=0)}
         self.assertEqual(rows["v2"]["kind"], "롱폼")
@@ -74,9 +93,9 @@ class OverseasTest(unittest.TestCase):
         self.assertEqual(rows["v5"], "US")    # 국가 정보 없지만 미국 인기 차트에 있음
 
     def test_estimate(self, _):
-        self.assertEqual(overseas.estimate_units(3), 3 * 117)                      # 차트 + #shorts 검색
-        self.assertEqual(overseas.estimate_units(3, kind="long"), 3 * 15)          # 롱폼은 차트만
-        self.assertEqual(overseas.estimate_units(1, ["a", "b"], kind="long"), 15 + 204)
+        self.assertEqual(overseas.estimate_units(["KR", "US", "GB"]), 3 * 15 + 8 * 102)
+        self.assertEqual(overseas.estimate_units(["KR"], use_search=False), 15)
+        self.assertEqual(overseas.estimate_units(["US", "GB"], ["a", "b"]), 30 + 204)
 
     def test_only_selected_regions_and_min_views(self, _):
         rows = overseas.collect(["US"], min_views=100_000)
