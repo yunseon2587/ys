@@ -1,129 +1,61 @@
 """
-일본 쇼츠 소재 찾기 MVP (YouTube Data API v3)
+일본 쇼츠 소재 찾기 (YouTube Data API v3)
 
-사용법
-  pip install requests
-  export YT_API_KEY="발급받은_키"
-
-  # 1) 트렌드: 최근 N일간 일본에서 조회수 높은 쇼츠 뽑기
+사용법 (자세한 설명은 README.md)
+  # 1) 트렌드: 최근 N일간 일본에서 뜬 쇼츠를 outlier·시간당 조회수 순으로
   python jp_shorts_finder.py trend --days 7 --keywords バラエティ 神回 ドッキリ
 
   # 2) 체크: 이 소재로 일본 쇼츠가 이미 있는지(포화도) 확인
   python jp_shorts_finder.py check --keywords "ケチャップ 逆さま"
 
-결과는 화면 출력 + CSV 파일로 저장됩니다.
-할당량: search 1회 = 100유닛, 기본 하루 10,000유닛 → 키워드 검색 약 90회/일
+  # 3) 오늘 남은 할당량 보기 (할당량 안 씀)
+  python jp_shorts_finder.py quota
+
+API 키는 .env 파일의 YT_API_KEY에서 읽습니다.
+같은 검색은 12시간 동안 캐시되어 할당량을 다시 쓰지 않습니다 (--refresh로 강제 새로고침).
+결과는 화면 출력 + output/ 폴더에 CSV로 저장됩니다.
 """
-import argparse, csv, os, re, sys
-from datetime import datetime, timedelta, timezone
-import requests
+import argparse
+import csv
+import sys
+from datetime import datetime
 
-API = "https://www.googleapis.com/youtube/v3"
-KEY = os.environ.get("YT_API_KEY")
-MAX_SHORT_SEC = 180  # 현재 쇼츠 최대 길이 기준
+from shorts import youtube
+from shorts.config import OUTPUT_DIR
+from shorts.trending import collect, enrich, estimate_units, search_ids
 
-
-def get(endpoint, **params):
-    params["key"] = KEY
-    r = requests.get(f"{API}/{endpoint}", params=params, timeout=20)
-    r.raise_for_status()
-    return r.json()
-
-
-def iso_to_sec(d):
-    m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", d or "")
-    if not m:
-        return 0
-    h, mi, s = (int(x or 0) for x in m.groups())
-    return h * 3600 + mi * 60 + s
-
-
-def search_ids(keyword, days, pages):
-    after = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    ids, token = [], None
-    for _ in range(pages):
-        p = dict(part="id", q=keyword, type="video", maxResults=50,
-                 regionCode="JP", relevanceLanguage="ja", videoDuration="short",
-                 order="viewCount", publishedAfter=after)
-        if token:
-            p["pageToken"] = token
-        data = get("search", **p)
-        ids += [it["id"]["videoId"] for it in data.get("items", [])]
-        token = data.get("nextPageToken")
-        if not token:
-            break
-    return ids
-
-
-def chunks(lst, n=50):
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
-
-
-def enrich(ids):
-    videos = []
-    for c in chunks(list(dict.fromkeys(ids))):
-        data = get("videos", part="snippet,statistics,contentDetails", id=",".join(c))
-        videos += data.get("items", [])
-    ch_ids = list({v["snippet"]["channelId"] for v in videos})
-    subs = {}
-    for c in chunks(ch_ids):
-        for ch in get("channels", part="statistics", id=",".join(c)).get("items", []):
-            subs[ch["id"]] = int(ch["statistics"].get("subscriberCount", 0) or 0)
-
-    now = datetime.now(timezone.utc)
-    rows = []
-    for v in videos:
-        sec = iso_to_sec(v["contentDetails"].get("duration"))
-        if sec == 0 or sec > MAX_SHORT_SEC:
-            continue
-        st, sn = v["statistics"], v["snippet"]
-        views = int(st.get("viewCount", 0))
-        pub = datetime.fromisoformat(sn["publishedAt"].replace("Z", "+00:00"))
-        hours = max((now - pub).total_seconds() / 3600, 1)
-        s = subs.get(sn["channelId"], 0)
-        rows.append({
-            "title": sn["title"],
-            "channel": sn["channelTitle"],
-            "views": views,
-            "subs": s,
-            "outlier": round(views / s, 1) if s else None,  # 구독자 대비 조회수 배수
-            "views_per_hour": int(views / hours),          # 조회수 속도
-            "likes": int(st.get("likeCount", 0) or 0),
-            "sec": sec,
-            "published": sn["publishedAt"][:10],
-            "url": f"https://youtube.com/shorts/{v['id']}",
-        })
-    return rows
+CSV_FIELDS = ["outlier", "views_per_hour", "views", "subs", "likes", "sec", "published",
+              "title", "channel", "keyword", "url", "thumbnail", "video_id"]
 
 
 def save(rows, name):
     if not rows:
         print("결과 없음")
         return
-    path = f"{name}_{datetime.now():%Y%m%d_%H%M}.csv"
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    path = OUTPUT_DIR / f"{name}_{datetime.now():%Y%m%d_%H%M}.csv"
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=rows[0].keys())
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
     print(f"\n저장: {path}")
 
 
 def cmd_trend(a):
-    ids = []
-    for kw in a.keywords:
-        ids += search_ids(kw, a.days, a.pages)
-    rows = enrich(ids)
-    rows.sort(key=lambda r: (r["outlier"] or 0, r["views_per_hour"]), reverse=True)
-    rows = [r for r in rows if r["views"] >= a.min_views]
+    need = estimate_units(len(a.keywords), a.pages)
+    print(f"키워드 {len(a.keywords)}개 × {a.pages}페이지 검색 (캐시가 없으면 약 {need}유닛 사용)")
+    rows = collect(a.keywords, a.days, a.pages, a.min_views, a.refresh)
+    print(f"\n최근 {a.days}일 · 조회수 {a.min_views:,} 이상 · {len(rows)}개\n")
+    print(f"{'배수':<7} {'조회수':>11} {'시간당':>8}  제목")
     for r in rows[:a.top]:
-        print(f"x{str(r['outlier'] or '-'):<6} {r['views']:>10,}회 {r['views_per_hour']:>7,}/h  {r['title'][:40]}  {r['url']}")
+        print(f"x{str(r['outlier'] or '-'):<6} {r['views']:>10,}회 {r['views_per_hour']:>7,}/h  "
+              f"{r['title'][:40]}  {r['url']}")
     save(rows, "trend")
 
 
 def cmd_check(a):
     kw = " ".join(a.keywords)
-    rows = enrich(search_ids(kw, a.days, 1))
+    rows = enrich(search_ids(kw, a.days, 1, a.refresh), a.refresh)
     rows.sort(key=lambda r: r["views"], reverse=True)
     total = sum(r["views"] for r in rows)
     print(f"'{kw}' 관련 일본 쇼츠 {len(rows)}개 / 합계 조회수 {total:,}")
@@ -138,24 +70,43 @@ def cmd_check(a):
     save(rows, "check")
 
 
+def cmd_quota(a):
+    pass  # 아래 main()에서 요약을 출력한다
+
+
 def main():
-    if not KEY:
-        sys.exit("환경변수 YT_API_KEY를 설정하세요.")
-    p = argparse.ArgumentParser()
+    # 윈도우 터미널에서 일본어가 깨지지 않도록
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    p = argparse.ArgumentParser(description="일본 쇼츠 소재 찾기")
     sub = p.add_subparsers(dest="cmd", required=True)
-    t = sub.add_parser("trend")
+    t = sub.add_parser("trend", help="최근 인기 쇼츠 수집")
     t.add_argument("--keywords", nargs="+", default=["バラエティ", "神回", "切り抜き"])
     t.add_argument("--days", type=int, default=7)
-    t.add_argument("--pages", type=int, default=1)
+    t.add_argument("--pages", type=int, default=1, help="키워드당 검색 페이지 수 (1페이지=50개, 100유닛)")
     t.add_argument("--min-views", type=int, default=100000)
     t.add_argument("--top", type=int, default=30)
+    t.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     t.set_defaults(func=cmd_trend)
-    c = sub.add_parser("check")
+    c = sub.add_parser("check", help="소재의 일본 포화도 확인")
     c.add_argument("--keywords", nargs="+", required=True)
     c.add_argument("--days", type=int, default=365)
+    c.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     c.set_defaults(func=cmd_check)
+    q = sub.add_parser("quota", help="오늘 사용한 할당량 보기")
+    q.set_defaults(func=cmd_quota)
     a = p.parse_args()
-    a.func(a)
+
+    try:
+        a.func(a)
+    except youtube.YouTubeError as e:
+        print(f"\n[오류] {e}")
+        print("\n" + youtube.quota_summary())
+        sys.exit(1)
+    print("\n" + youtube.quota_summary())
 
 
 if __name__ == "__main__":
