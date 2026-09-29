@@ -9,6 +9,7 @@ os.environ["YT_API_KEY"] = "fake-key"
 
 from shorts import overseas, youtube  # noqa: E402
 from shorts.db import connect  # noqa: E402
+from tests import fake_youtube  # noqa: E402
 from tests.fake_youtube import fake_get  # noqa: E402
 
 # 가짜 데이터의 채널 국가: c1=KR(v1, v4는 긴 영상), c2=US(v2), c3=JP(v3), c4=국가 없음(v5)
@@ -55,6 +56,22 @@ class OverseasTest(unittest.TestCase):
         self.assertEqual(rows["v2"]["kind"], "롱폼")
         self.assertEqual(rows["v2"]["url"], "https://youtube.com/watch?v=v2")
         self.assertEqual(rows["v1"]["kind"], "쇼츠")
+
+    def test_filters_indian_videos(self, _):
+        extra = {"v6": ("मजेदार वीडियो", "c4", 5, "PT30S", 3_000_000),   # 힌디어 제목
+                 "v7": ("Funny prank video", "c4", 5, "PT30S", 3_000_000),  # 인도 영어
+                 "v8": ("Epic fail compilation", "c4", 5, "PT30S", 3_000_000),  # 검색에서만, 정보 없음
+                 "v9": ("Try not to laugh", "c4", 5, "PT30S", 3_000_000)}  # 검색에서만, 미국 영어
+        videos = {**fake_youtube.VIDEOS, **extra}
+        with mock.patch.dict("tests.fake_youtube.VIDEOS", videos), \
+                mock.patch.dict("tests.fake_youtube.LANG", {"v7": "en-IN", "v9": "en"}), \
+                mock.patch("tests.fake_youtube.CHART", {"v1", "v2", "v3", "v4", "v5"}):
+            rows = {r["video_id"]: r["country"] for r in overseas.collect(["US"], min_views=0)}
+        self.assertNotIn("v6", rows)          # 힌디어 제목
+        self.assertNotIn("v7", rows)          # 언어 en-IN
+        self.assertNotIn("v8", rows)          # 검색 결과 + 국가·언어 정보 없음
+        self.assertEqual(rows["v9"], "US")    # 검색 결과지만 언어가 영어라 남김
+        self.assertEqual(rows["v5"], "US")    # 국가 정보 없지만 미국 인기 차트에 있음
 
     def test_estimate(self, _):
         self.assertEqual(overseas.estimate_units(3), 3 * 117)                      # 차트 + #shorts 검색

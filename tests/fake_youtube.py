@@ -14,6 +14,8 @@ VIDEOS = {
 }
 HORIZONTAL = {"v4"}   # 가로 영상 (나머지는 세로)
 CATEGORY = {}         # video_id → categoryId (없으면 "24" 엔터테인먼트)
+LANG = {}             # video_id → defaultAudioLanguage (없으면 정보 없음)
+CHART = None          # 인기 차트에 나오는 영상 (None이면 전부)
 SUBS = {"c1": 1_000_000, "c2": 5_000, "c3": 300_000, "c4": 0}
 COUNTRY = {"c1": "KR", "c2": "US", "c3": "JP", "c4": ""}
 
@@ -35,7 +37,7 @@ def fake_get(url, params=None, timeout=None):
     if ep == "search":
         return Resp({"items": [{"id": {"videoId": v}} for v in VIDEOS]})
     if ep == "videos" and "chart" in params:  # 인기 차트
-        return Resp({"items": [{"id": v} for v in VIDEOS]})
+        return Resp({"items": [{"id": v} for v in VIDEOS if CHART is None or v in CHART]})
     if ep == "videos":
         items = []
         for vid in params["id"].split(","):
@@ -44,6 +46,7 @@ def fake_get(url, params=None, timeout=None):
                 "id": vid,
                 "snippet": {"title": title, "channelId": ch, "channelTitle": f"チャンネル{ch}",
                             "categoryId": CATEGORY.get(vid, "24"),
+                            **({"defaultAudioLanguage": LANG[vid]} if vid in LANG else {}),
                             "publishedAt": (NOW - timedelta(hours=hrs)).strftime("%Y-%m-%dT%H:%M:%SZ"),
                             "thumbnails": {"high": {"url": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"}}},
                 "statistics": {"viewCount": str(views), "likeCount": str(views // 50)},

@@ -98,6 +98,7 @@ def enrich(ids, refresh=False, include_long=False):
             "thumbnail": thumb,
             "kind": "쇼츠" if is_short else "롱폼",
             "category_id": sn.get("categoryId", ""),
+            "lang": (sn.get("defaultAudioLanguage") or sn.get("defaultLanguage") or "").lower(),  # 예: en, en-in, ko
             "url": f"https://youtube.com/shorts/{v['id']}" if is_short else f"https://youtube.com/watch?v={v['id']}",
         })
     return rows
