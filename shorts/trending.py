@@ -18,13 +18,14 @@ def estimate_units(n_keywords, pages):
     return n_keywords * pages * 100 + n_keywords * pages * 2
 
 
-def search_ids(keyword, days, pages, refresh=False, region="JP", lang="ja"):
+def search_ids(keyword, days, pages, refresh=False, region="JP", lang="ja", duration="short"):
+    """duration: short(4분 미만) / medium(4~20분) / long(20분 초과) / any(전부)"""
     # 날짜 단위로 맞춰야 같은 날 같은 검색이 캐시에 걸린다
     after = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
     ids, token = [], None
     for _ in range(pages):
         p = dict(part="id", q=keyword, type="video", maxResults=50,
-                 regionCode=region, relevanceLanguage=lang, videoDuration="short",
+                 regionCode=region, relevanceLanguage=lang, videoDuration=duration,
                  order="viewCount", publishedAfter=after)
         if token:
             p["pageToken"] = token
@@ -51,7 +52,8 @@ def chart_ids(region, pages=4, refresh=False):
     return ids
 
 
-def enrich(ids, refresh=False):
+def enrich(ids, refresh=False, include_long=False):
+    """include_long=True면 3분 넘는 롱폼도 남긴다 (기본은 쇼츠만)."""
     ttl = 0 if refresh else STATS_TTL
     videos = []
     for c in chunks(list(dict.fromkeys(ids))):
@@ -69,7 +71,8 @@ def enrich(ids, refresh=False):
     rows = []
     for v in videos:
         sec = iso_to_sec(v["contentDetails"].get("duration"))
-        if sec == 0 or sec > MAX_SHORT_SEC:
+        is_short = 0 < sec <= MAX_SHORT_SEC
+        if sec == 0 or (not is_short and not include_long):
             continue
         st, sn = v["statistics"], v["snippet"]
         views = int(st.get("viewCount", 0) or 0)
@@ -90,7 +93,8 @@ def enrich(ids, refresh=False):
             "sec": sec,
             "published": sn["publishedAt"],
             "thumbnail": thumb,
-            "url": f"https://youtube.com/shorts/{v['id']}",
+            "kind": "쇼츠" if is_short else "롱폼",
+            "url": f"https://youtube.com/shorts/{v['id']}" if is_short else f"https://youtube.com/watch?v={v['id']}",
         })
     return rows
 

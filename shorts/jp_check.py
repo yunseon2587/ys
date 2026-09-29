@@ -140,9 +140,11 @@ def keyword_match(query, rows):
     return similar, excluded
 
 
-def check_keywords(query, jp_days=365, hit_views=100_000, refresh=False):
-    """일본어 검색어를 직접 넣어 확인 (Claude 사용 안 함, 약 102유닛)."""
-    rows = enrich(search_ids(query, jp_days, 1, refresh, region="JP", lang="ja"), refresh)
+def check_keywords(query, jp_days=365, hit_views=100_000, refresh=False, include_long=False):
+    """일본어 검색어를 직접 넣어 확인 (Claude 사용 안 함, 약 102유닛). include_long=True면 일본 롱폼도 포함."""
+    duration = "any" if include_long else "short"
+    rows = enrich(search_ids(query, jp_days, 1, refresh, region="JP", lang="ja", duration=duration),
+                  refresh, include_long)
     similar, excluded = keyword_match(query, rows)
     similar.sort(key=lambda r: r["views"], reverse=True)
     excluded.sort(key=lambda r: r["views"], reverse=True)
@@ -152,7 +154,8 @@ def check_keywords(query, jp_days=365, hit_views=100_000, refresh=False):
         "source_video_id": None, "source_title": query, "source_views": None, "source_url": "",
         "thumbnail": "", "topic_ko": "", "jp_query": query,
         "verdict": verdict, "reason": reason, "similar_count": len(similar), "hit_count": hit_count,
-        "similar": [{k: s[k] for k in ("title", "channel", "views", "url", "thumbnail")} for s in similar[:10]],
+        "similar": [{k: s[k] for k in ("title", "channel", "views", "url", "thumbnail", "kind")}
+                    for s in similar[:10]],
     }
     save_check(r)
     return r, similar, excluded

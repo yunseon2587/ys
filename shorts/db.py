@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS jp_checks (
 CREATE TABLE IF NOT EXISTS overseas_videos (
     video_id       TEXT PRIMARY KEY,
     country        TEXT,      -- KR / US / GB
+    kind           TEXT,      -- 쇼츠 / 롱폼
+    duration_sec   INTEGER,
     title          TEXT,
     channel        TEXT,
     views          INTEGER,
@@ -84,4 +86,17 @@ def connect():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    _add_missing_columns(con)
     return con
+
+
+# 예전 버전으로 만든 DB에 새로 생긴 칸을 추가한다 (데이터는 그대로 유지)
+NEW_COLUMNS = {"overseas_videos": {"kind": "TEXT", "duration_sec": "INTEGER"}}
+
+
+def _add_missing_columns(con):
+    for table, cols in NEW_COLUMNS.items():
+        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        for name, typ in cols.items():
+            if name not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")

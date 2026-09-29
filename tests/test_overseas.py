@@ -22,14 +22,28 @@ class OverseasTest(unittest.TestCase):
                 con.execute(f"DELETE FROM {t}")
 
     def test_country_filter_and_sort(self, _):
-        rows = overseas.collect(["KR", "US", "GB"], min_views=0)
+        rows = overseas.collect(["KR", "US", "GB"], min_views=0, kind="shorts")
         by_id = {r["video_id"]: r["country"] for r in rows}
         self.assertNotIn("v3", by_id)          # 일본 채널 제외
-        self.assertNotIn("v4", by_id)          # 쇼츠 아님
+        self.assertNotIn("v4", by_id)          # 쇼츠만 볼 때 10분 영상 제외
         self.assertEqual(by_id["v1"], "KR")
         self.assertEqual(by_id["v2"], "US")    # 채널 국가 US
         self.assertEqual(by_id["v5"], "KR")    # 국가 없음 → 처음 찾은 지역(KR)
         self.assertEqual([r["video_id"] for r in rows], ["v1", "v2", "v5"])  # 조회수 순
+
+    def test_long_form(self, _):
+        rows = overseas.collect(["KR", "US"], min_views=0)  # 기본: 쇼츠+롱폼
+        self.assertEqual(rows[0]["video_id"], "v4")          # 900만회 롱폼이 1위
+        self.assertEqual(rows[0]["kind"], "롱폼")
+        self.assertEqual(rows[0]["url"], "https://youtube.com/watch?v=v4")
+        self.assertEqual(overseas.fmt_duration(rows[0]["sec"]), "10:00")
+        only_long = overseas.collect(["KR", "US"], min_views=0, kind="long")
+        self.assertEqual([r["video_id"] for r in only_long], ["v4"])
+
+    def test_estimate(self, _):
+        self.assertEqual(overseas.estimate_units(3), 3 * 117)                      # 차트 + #shorts 검색
+        self.assertEqual(overseas.estimate_units(3, kind="long"), 3 * 15)          # 롱폼은 차트만
+        self.assertEqual(overseas.estimate_units(1, ["a", "b"], kind="long"), 15 + 204)
 
     def test_only_selected_regions_and_min_views(self, _):
         rows = overseas.collect(["US"], min_views=100_000)
@@ -45,7 +59,7 @@ class OverseasTest(unittest.TestCase):
         self.assertIn("tl=ja", rows[0]["translate"])
         self.assertNotIn("%23", overseas.translate_link("고양이 #shorts #funny"))  # 해시태그 제거
         with connect() as con:
-            self.assertEqual(con.execute("SELECT COUNT(*) FROM overseas_videos").fetchone()[0], 3)
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM overseas_videos").fetchone()[0], 4)  # 쇼츠 3 + 롱폼 1
 
 
 if __name__ == "__main__":

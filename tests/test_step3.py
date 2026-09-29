@@ -99,3 +99,10 @@ class FreeCheckTest(unittest.TestCase):
         self.assertEqual(len(excluded), 3)
         self.assertEqual(r["verdict"], "차별화 필요")        # 50만회 1개
         self.assertEqual(jp_check.check_keywords("存在しない")[0]["verdict"], "선점 가능")
+
+    def test_check_keywords_with_long_form(self, _):
+        _, similar, excluded = jp_check.check_keywords("쇼츠", include_long=True)
+        self.assertEqual([s["video_id"] for s in similar], ["v4"])  # 롱폼도 찾음
+        self.assertEqual(similar[0]["kind"], "롱폼")
+        _, similar, _ = jp_check.check_keywords("쇼츠")               # 기본(쇼츠만)이면 안 나옴
+        self.assertEqual(similar, [])

@@ -17,7 +17,7 @@
   python jp_shorts_finder.py schedule --every 3   # 3시간마다 자동 기록 등록
 
   # 5) 해외(한국·미국·영국)에서 터진 쇼츠 모으기 → 골라서 check로 일본에 있는지 확인 (무료)
-  python jp_shorts_finder.py overseas --days 7
+  python jp_shorts_finder.py overseas --days 7              # 쇼츠+롱폼 (--type shorts / long)
   python jp_shorts_finder.py check --keywords "ケチャップ 逆さま"
 
   # 6) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
@@ -79,32 +79,37 @@ def cmd_trend(a):
 
 def cmd_check(a):
     kw = " ".join(a.keywords)
-    r, similar, excluded = jp_check.check_keywords(kw, a.days, a.hit_views, a.refresh)
+    r, similar, excluded = jp_check.check_keywords(kw, a.days, a.hit_views, a.refresh, a.type == "all")
     icon = {"선점 가능": "🟢", "차별화 필요": "🟡", "포화": "🔴"}[r["verdict"]]
-    print(f"일본 검색어: {kw}  (최근 {a.days}일, 검색 결과 쇼츠 {len(similar) + len(excluded)}개)\n")
+    what = "쇼츠+롱폼" if a.type == "all" else "쇼츠"
+    print(f"일본 검색어: {kw}  (최근 {a.days}일, 검색 결과 {what} {len(similar) + len(excluded)}개)\n")
     print(f"{icon} [{r['verdict']}] {r['reason']}")
     print("   ※ 제목에 검색어가 모두 들어간 영상만 '같은 소재'로 셌어요.\n")
     print(f"✅ 같은 소재로 본 영상 ({len(similar)}개)")
     for s in similar[:a.show]:
-        print(f"  {s['views']:>10,}회  {s['title'][:40]}  {s['url']}")
+        print(f"  {s['views']:>10,}회  {s['kind']}  {s['title'][:40]}  {s['url']}")
     if not similar:
         print("  (없음)")
     print(f"\n✖ 제외한 영상 중 조회수 상위 (전체 {len(excluded)}개) — 같은 소재인데 빠졌다면 검색어를 바꿔 보세요")
     for s in excluded[:a.show]:
-        print(f"  {s['views']:>10,}회  {s['title'][:40]}  {s['url']}")
+        print(f"  {s['views']:>10,}회  {s['kind']}  {s['title'][:40]}  {s['url']}")
     save(similar + excluded, "check")
 
 
 def cmd_overseas(a):
-    need = overseas.estimate_units(len(a.regions), len(a.keywords or []), not a.no_search)
-    print(f"{', '.join(overseas.REGIONS[r][1] for r in a.regions)} · 최근 {a.days}일 · 조회수 {a.min_views:,} 이상"
-          f" (캐시가 없으면 약 {need:,}유닛 사용)")
-    rows = overseas.collect(a.regions, a.keywords, a.days, a.min_views, a.sort, not a.no_search, a.refresh)
+    need = overseas.estimate_units(len(a.regions), a.keywords, not a.no_search, a.type)
+    kind_name = {"all": "쇼츠+롱폼", "shorts": "쇼츠", "long": "롱폼"}[a.type]
+    print(f"{', '.join(overseas.REGIONS[r][1] for r in a.regions)} · {kind_name} · 최근 {a.days}일"
+          f" · 조회수 {a.min_views:,} 이상 (캐시가 없으면 약 {need:,}유닛 사용)")
+    rows = overseas.collect(a.regions, a.keywords, a.days, a.min_views, a.sort, not a.no_search, a.refresh,
+                            a.type)
     sort_name = {"views": "조회수", "vph": "시간당 조회수", "outlier": "구독자 대비 배수"}[a.sort]
-    print(f"\n해외에서 터진 쇼츠 {len(rows)}개 ({sort_name} 순)\n")
+    n_short = sum(r["kind"] == "쇼츠" for r in rows)
+    print(f"\n해외에서 터진 영상 {len(rows)}개 (쇼츠 {n_short} · 롱폼 {len(rows) - n_short}, {sort_name} 순)\n")
     for i, r in enumerate(rows[:a.top], 1):
         x = f"x{r['outlier']}" if r["outlier"] else "x-"
-        print(f"{i:>2}. [{r['country']}] {r['views']:>11,}회 · {r['views_per_hour']:>7,}/h · {x:<7} {r['title'][:50]}")
+        tag = f"{r['country']}·쇼츠" if r["kind"] == "쇼츠" else f"{r['country']}·롱폼 {overseas.fmt_duration(r['sec'])}"
+        print(f"{i:>2}. [{tag}] {r['views']:>11,}회 · {r['views_per_hour']:>7,}/h · {x:<7} {r['title'][:50]}")
         print(f"    영상: {r['url']}")
         print(f"    번역: {r['translate']}")
     if rows:
@@ -112,7 +117,7 @@ def cmd_overseas(a):
         print('  python jp_shorts_finder.py check --keywords "일본어 검색어"')
     else:
         print("조건에 맞는 영상이 없어요. --min-views 를 낮추거나 --days 를 늘려 보세요.")
-    save(rows, "overseas", ["country", "views", "views_per_hour", "outlier", "subs", "published",
+    save(rows, "overseas", ["country", "kind", "sec", "views", "views_per_hour", "outlier", "subs", "published",
                             "title", "channel", "url", "translate", "video_id"])
 
 
@@ -231,6 +236,8 @@ def main():
     c.add_argument("--days", type=int, default=365, help="최근 며칠 안의 일본 영상과 비교")
     c.add_argument("--hit-views", type=int, default=100000, help="이 조회수 이상이면 '뜬 영상'으로 봄")
     c.add_argument("--show", type=int, default=5, help="목록을 몇 개씩 보여줄지")
+    c.add_argument("--type", choices=["shorts", "all"], default="shorts",
+                   help="일본에서 찾을 영상: shorts 쇼츠만 / all 쇼츠+롱폼")
     c.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     c.set_defaults(func=cmd_check)
     q = sub.add_parser("quota", help="오늘 사용한 할당량 보기")
@@ -248,7 +255,9 @@ def main():
     sc.set_defaults(func=cmd_schedule)
     us = sub.add_parser("unschedule", help="조회수 자동 기록 해제")
     us.set_defaults(func=cmd_unschedule)
-    ov = sub.add_parser("overseas", help="한국·미국·영국에서 조회수 터진 쇼츠 모으기 (무료)")
+    ov = sub.add_parser("overseas", help="한국·미국·영국에서 조회수 터진 쇼츠·롱폼 모으기 (무료)")
+    ov.add_argument("--type", choices=["all", "shorts", "long"], default="all",
+                    help="all 쇼츠+롱폼 / shorts 쇼츠만 / long 롱폼만")
     ov.add_argument("--regions", nargs="+", choices=list(overseas.REGIONS), default=list(overseas.REGIONS),
                     help="볼 나라 (KR 한국, US 미국, GB 영국)")
     ov.add_argument("--keywords", nargs="+", help="이 키워드로 검색 (없으면 #shorts 로 검색)")
