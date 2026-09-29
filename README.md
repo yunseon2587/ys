@@ -3,7 +3,7 @@
 일본 타깃 유튜브 쇼츠 소재를 찾는 개인용 도구예요.
 **구독자 대비 조회수 배수(outlier)** 와 **시간당 조회수**로 "작은 채널인데 터진 영상"을 찾아줍니다.
 
-> 현재 진행 상황: ✅ 1단계 트렌드 · ✅ 2단계 급상승 · ⬜ 3단계 일본판 확인 · ⬜ 4단계 화면
+> 현재 진행 상황: ✅ 1단계 트렌드 · ✅ 2단계 급상승 · ✅ 3단계 일본판 확인 · ⬜ 4단계 화면
 
 ---
 
@@ -16,7 +16,7 @@
 python --version
 ```
 
-`Python 3.9` 이상이 나오면 OK. 안 나오면 https://www.python.org/downloads/ 에서 설치하세요.
+`Python 3.10` 이상이 나오면 OK. 안 나오면 https://www.python.org/downloads/ 에서 설치하세요.
 (윈도우는 설치 화면 첫 페이지의 **"Add Python to PATH"** 체크박스를 꼭 체크!)
 
 > 맥에서 `python`이 안 되면 이 문서의 모든 `python`을 `python3`로, `pip`을 `pip3`로 바꿔서 입력하세요.
@@ -58,7 +58,7 @@ ANTHROPIC_API_KEY=
 ```
 
 - 따옴표나 띄어쓰기 없이 붙여넣으세요.
-- `ANTHROPIC_API_KEY`는 3단계에서 쓸 거라 지금은 비워둬도 돼요.
+- `ANTHROPIC_API_KEY`는 '일본판 확인(jpcheck)'에만 필요해요. 아래 **Claude API 키** 참고.
 - `.env`는 `.gitignore`에 들어 있어서 GitHub에 올라가지 않아요.
 
 ---
@@ -162,6 +162,64 @@ python jp_shorts_finder.py schedule --every 3
 - ⚠️ 폴더를 다른 곳으로 옮기면 `schedule`을 다시 한 번 실행하세요.
 - 맥은 이 명령이 `crontab`에 붙여넣을 한 줄을 알려줘요.
 
+### 🇯🇵 일본판 확인: 한국·미국에서 뜬 쇼츠, 일본에도 있을까?
+
+한국·미국 인기 쇼츠 제목을 **Claude가 일본어 검색어로 바꿔서** 일본 유튜브를 검색하고,
+검색 결과 중 **정말 같은 소재인 영상만 Claude가 골라낸 뒤** 판정해요.
+
+```bash
+# 한국 인기 차트에서 쇼츠 5개 골라 확인
+python jp_shorts_finder.py jpcheck --region KR --limit 5
+
+# 미국에서 키워드로 찾은 쇼츠 확인
+python jp_shorts_finder.py jpcheck --region US --keywords "life hack" --limit 5
+
+# 내가 생각한 소재를 직접 확인 (여러 개는 따옴표로 각각 묶기)
+python jp_shorts_finder.py jpcheck --title "케첩 거꾸로 짜기 챌린지" "편의점 신상 조합 먹방"
+```
+
+결과 예시:
+```
+🟢 [선점 가능] 케첩 거꾸로 짜기 챌린지
+    소재: 케첩을 거꾸로 짜는 실험  |  일본 검색어: ケチャップ 逆さま 実験
+    같은 소재 일본 쇼츠 1개, 그중 100,000회 이상 0개 → 아직 일본에서 뜬 영상이 없음
+```
+
+**판정 기준** (같은 소재 일본 쇼츠 중 조회수 10만 이상인 "성공작" 개수)
+
+| 판정 | 기준 | 의미 |
+|---|---|---|
+| 🟢 선점 가능 | 성공작 0개 | 일본에서 아직 아무도 성공 못 함 → 먼저 만들 기회 |
+| 🟡 차별화 필요 | 성공작 1~2개 | 이미 뜬 게 있으니 각도·편집을 다르게 |
+| 🔴 포화 | 성공작 3개 이상 | 이미 여러 개가 성공함 |
+
+| 옵션 | 뜻 | 기본값 |
+|---|---|---|
+| `--region` | 어느 나라에서 뜬 쇼츠를 볼지 (`KR` 또는 `US`) | KR |
+| `--keywords` | 그 나라에서 이 키워드로 검색 (없으면 인기 차트 사용) | 없음 |
+| `--title` | 확인할 제목을 직접 입력 | 없음 |
+| `--limit` | 확인할 개수 | 5 |
+| `--hit-views` | 이 조회수 이상이면 "성공작"으로 봄 | 100000 |
+| `--jp-days` | 일본에서 최근 며칠 안의 영상과 비교 | 365 |
+
+**비용**
+- YouTube: 1개 확인할 때마다 일본 검색 **약 102유닛** → `--limit 5`면 약 520유닛. 실행 전에 예상량을 보여주고, 부족하면 멈춰요.
+- Claude: 5개 확인에 대략 **100~200원** 수준 (Claude Opus 5.5 사용). 같은 제목을 다시 확인하면 저장해둔 답을 써서 **0원**이에요.
+- 인기 차트(`--keywords` 없이)는 원본을 모으는 데 몇 유닛밖에 안 들어서 가장 저렴해요.
+- 한국 인기 차트에 쇼츠가 적을 때는 `--keywords`를 쓰세요.
+
+#### Claude API 키 발급
+
+1. https://console.anthropic.com/ 가입 → 로그인
+2. **Billing**에서 크레딧 충전 (최소 금액이면 충분해요)
+3. **API Keys** → **Create Key** → 나온 키(`sk-ant-...`) 복사
+4. `.env` 파일의 `ANTHROPIC_API_KEY=` 뒤에 붙여넣고 저장
+
+   PowerShell에서 한 줄 추가하기:
+   ```powershell
+   Add-Content .env "ANTHROPIC_API_KEY=복사한키"
+   ```
+
 ---
 
 ## 할당량 아끼는 원리
@@ -191,12 +249,14 @@ YouTube API는 하루 **10,000유닛** 무료예요.
 | `YouTube Data API v3를 사용 설정해 주세요` | 1번의 3단계(Enable)를 확인 |
 | `할당량을 모두 썼어요` | 한국 시간 오후 4~5시 이후에 다시 실행 |
 | `No module named ...` | `pip install -r requirements.txt` 다시 실행 |
+| `ANTHROPIC_API_KEY가 없어요` / `올바르지 않아요` | 위의 'Claude API 키 발급' 확인 |
+| `크레딧이 부족해요` | console.anthropic.com → Billing에서 충전 |
 
 ## 파일 구조
 
 ```
 jp_shorts_finder.py   ← 실행하는 파일
-shorts/               ← 내부 코드 (config, db, youtube, metrics, trending, rising, schedule)
+shorts/               ← 내부 코드 (config, db, youtube, metrics, trending, rising, schedule, claude_ai, jp_check)
 tests/                ← 자동 테스트 (API 키 없이 가짜 데이터로 동작 확인)
 data/shorts.db        ← 캐시·할당량·수집 영상·조회수 기록 (자동 생성, 지우면 기록이 사라져요)
 data/snapshot.log     ← 자동 기록 실행 로그

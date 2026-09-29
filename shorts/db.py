@@ -40,6 +40,28 @@ CREATE TABLE IF NOT EXISTS snapshots (
     likes    INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_snap ON snapshots(video_id, taken_at);
+CREATE TABLE IF NOT EXISTS llm_cache (
+    cache_key  TEXT PRIMARY KEY,
+    response   TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS jp_checks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    checked_at      TEXT,
+    region          TEXT,     -- KR / US / 직접입력
+    source_video_id TEXT,
+    source_title    TEXT,
+    source_views    INTEGER,
+    source_url      TEXT,
+    thumbnail       TEXT,
+    topic_ko        TEXT,     -- 무슨 내용인지 한국어 요약
+    jp_query        TEXT,     -- 일본 검색에 쓴 키워드
+    verdict         TEXT,     -- 선점 가능 / 차별화 필요 / 포화
+    reason          TEXT,
+    similar_count   INTEGER,
+    hit_count       INTEGER,
+    similar_json    TEXT      -- 비슷한 일본 쇼츠 목록
+);
 """
 
 

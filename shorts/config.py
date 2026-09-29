@@ -18,3 +18,10 @@ STATS_TTL = 3600
 
 def yt_key():
     return (os.environ.get("YT_API_KEY") or "").strip()
+
+
+def anthropic_key():
+    return (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+
+
+CLAUDE_MODEL = "claude-opus-5-5"

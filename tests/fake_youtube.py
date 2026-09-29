@@ -31,6 +31,8 @@ def fake_get(url, params=None, timeout=None):
     ep = urlparse(url).path.rsplit("/", 1)[-1]
     if ep == "search":
         return Resp({"items": [{"id": {"videoId": v}} for v in VIDEOS]})
+    if ep == "videos" and "chart" in params:  # 인기 차트
+        return Resp({"items": [{"id": v} for v in VIDEOS]})
     if ep == "videos":
         items = []
         for vid in params["id"].split(","):

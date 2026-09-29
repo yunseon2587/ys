@@ -16,7 +16,12 @@
   python jp_shorts_finder.py rising --hours 24
   python jp_shorts_finder.py schedule --every 3   # 3시간마다 자동 기록 등록
 
-API 키는 .env 파일의 YT_API_KEY에서 읽습니다.
+  # 5) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
+  python jp_shorts_finder.py jpcheck --region KR --limit 5
+  python jp_shorts_finder.py jpcheck --region US --keywords "life hack" --limit 5
+  python jp_shorts_finder.py jpcheck --title "케첩 거꾸로 짜기 챌린지"
+
+API 키는 .env 파일의 YT_API_KEY, ANTHROPIC_API_KEY에서 읽습니다.
 같은 검색은 12시간 동안 캐시되어 할당량을 다시 쓰지 않습니다 (--refresh로 강제 새로고침).
 결과는 화면 출력 + output/ 폴더에 CSV로 저장됩니다.
 """
@@ -27,7 +32,9 @@ import sys
 from datetime import datetime
 
 from shorts import youtube
-from shorts import schedule
+from shorts import jp_check, schedule
+from shorts.claude_ai import ClaudeError
+from shorts.claude_ai import client as claude_client
 from shorts.config import OUTPUT_DIR
 from shorts.rising import find_rising, take_snapshot, tracking_status
 from shorts.trending import collect, enrich, estimate_units, search_ids
@@ -37,14 +44,18 @@ CSV_FIELDS = ["outlier", "views_per_hour", "gain", "gain_per_hour", "growth_pct"
               "title", "channel", "keyword", "url", "thumbnail", "video_id"]
 
 
-def save(rows, name):
+JPCHECK_FIELDS = ["verdict", "reason", "source_title", "topic_ko", "jp_query", "source_views",
+                  "similar_count", "hit_count", "source_url", "region", "checked_at"]
+
+
+def save(rows, name, fields=CSV_FIELDS):
     if not rows:
         print("결과 없음")
         return
     OUTPUT_DIR.mkdir(exist_ok=True)
     path = OUTPUT_DIR / f"{name}_{datetime.now():%Y%m%d_%H%M}.csv"
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=CSV_FIELDS, extrasaction="ignore")
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
     print(f"\n저장: {path}")
@@ -118,6 +129,52 @@ def cmd_schedule(a):
         print(schedule.cron_line(a.every))
 
 
+def cmd_jpcheck(a):
+    claude_client()  # Claude 키가 없으면 YouTube 할당량을 쓰기 전에 멈춘다
+    if a.title:
+        source, region = "titles", "직접입력"
+    else:
+        source, region = ("keywords" if a.keywords else "popular"), a.region
+    n = len(a.title) if a.title else a.limit
+    need = jp_check.estimate_units(n, source)
+    left = youtube.remaining()
+    print(f"일본 검색 {n}회 예정 · 캐시가 없으면 약 {need:,}유닛 사용 (오늘 남은 할당량 {left:,})")
+    if need > left:
+        print(f"할당량이 부족할 수 있어요. --limit 를 {max(1, (left - 110) // jp_check.JP_SEARCH_UNITS)} 이하로 줄여 보세요.")
+        return
+
+    if source == "titles":
+        cands = jp_check.title_candidates(a.title)
+    elif source == "keywords":
+        cands = jp_check.keyword_candidates(a.region, a.keywords, a.days, a.limit)
+    else:
+        cands = jp_check.popular_candidates(a.region, a.limit)
+    if not cands:
+        print(f"{a.region} 인기 차트에 쇼츠가 없어요. --keywords 로 검색해 보세요.")
+        return
+    print(f"원본 {len(cands)}개 → Claude로 일본어 검색어 만드는 중...\n")
+
+    def progress(i, total, title):
+        print(f"  [{i}/{total}] 일본 검색: {title[:40]}")
+
+    rows = jp_check.check_candidates(cands, region, a.jp_days, a.hit_views, progress)
+    icon = {"선점 가능": "🟢", "차별화 필요": "🟡", "포화": "🔴"}
+    order = {"선점 가능": 0, "차별화 필요": 1, "포화": 2}
+    rows.sort(key=lambda r: (order[r["verdict"]], -(r["source_views"] or 0)))
+    print()
+    for r in rows:
+        views = f" ({r['source_views']:,}회)" if r["source_views"] is not None else ""
+        print(f"{icon[r['verdict']]} [{r['verdict']}] {r['source_title'][:50]}{views}")
+        print(f"    소재: {r['topic_ko']}  |  일본 검색어: {r['jp_query']}")
+        print(f"    {r['reason']}")
+        if r["source_url"]:
+            print(f"    원본: {r['source_url']}")
+        for s in r["similar"][:3]:
+            print(f"      · {s['views']:>10,}회  {s['title'][:40]}  {s['url']}")
+        print()
+    save(rows, "jpcheck", JPCHECK_FIELDS)
+
+
 def cmd_unschedule(a):
     if platform.system() == "Windows":
         r = schedule.windows_delete()
@@ -163,11 +220,20 @@ def main():
     sc.set_defaults(func=cmd_schedule)
     us = sub.add_parser("unschedule", help="조회수 자동 기록 해제")
     us.set_defaults(func=cmd_unschedule)
+    jc = sub.add_parser("jpcheck", help="한국·미국 인기 쇼츠의 일본판이 있는지 확인 (Claude 사용)")
+    jc.add_argument("--region", choices=["KR", "US"], default="KR", help="어느 나라에서 뜬 쇼츠를 볼지")
+    jc.add_argument("--keywords", nargs="+", help="그 나라에서 이 키워드로 검색 (없으면 인기 차트 사용)")
+    jc.add_argument("--title", nargs="+", help="확인하고 싶은 제목을 직접 입력")
+    jc.add_argument("--limit", type=int, default=5, help="확인할 원본 개수 (1개당 약 102유닛)")
+    jc.add_argument("--days", type=int, default=7, help="--keywords 검색 시 최근 며칠")
+    jc.add_argument("--jp-days", type=int, default=365, help="일본에서 최근 며칠 안의 영상과 비교할지")
+    jc.add_argument("--hit-views", type=int, default=100000, help="이 조회수 이상이면 '뜬 영상'으로 봄")
+    jc.set_defaults(func=cmd_jpcheck)
     a = p.parse_args()
 
     try:
         a.func(a)
-    except youtube.YouTubeError as e:
+    except (youtube.YouTubeError, ClaudeError) as e:
         print(f"\n[오류] {e}")
         print("\n" + youtube.quota_summary())
         sys.exit(1)
