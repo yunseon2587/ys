@@ -20,7 +20,9 @@ def client():
     global _client
     if _client is None:
         if not anthropic_key():
-            raise ClaudeError(".env 파일에 ANTHROPIC_API_KEY가 없어요. README의 'Claude API 키' 부분을 참고하세요.")
+            raise ClaudeError(".env 파일에 ANTHROPIC_API_KEY가 없어요. README의 'Claude API 키' 부분을 참고하세요.\n"
+                              "   결제 없이 하려면 일본어 검색어를 직접 넣는 check 명령을 쓰세요:\n"
+                              '   python jp_shorts_finder.py check --keywords "ドッキリ リアクション"')
         _client = anthropic.Anthropic(api_key=anthropic_key())
     return _client
 

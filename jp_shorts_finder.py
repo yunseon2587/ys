@@ -37,7 +37,7 @@ from shorts.claude_ai import ClaudeError
 from shorts.claude_ai import client as claude_client
 from shorts.config import OUTPUT_DIR
 from shorts.rising import find_rising, take_snapshot, tracking_status
-from shorts.trending import collect, enrich, estimate_units, search_ids
+from shorts.trending import collect, estimate_units
 
 CSV_FIELDS = ["outlier", "views_per_hour", "gain", "gain_per_hour", "growth_pct", "span_hours",
               "views", "subs", "likes", "sec", "published",
@@ -75,19 +75,20 @@ def cmd_trend(a):
 
 def cmd_check(a):
     kw = " ".join(a.keywords)
-    rows = enrich(search_ids(kw, a.days, 1, a.refresh), a.refresh)
-    rows.sort(key=lambda r: r["views"], reverse=True)
-    total = sum(r["views"] for r in rows)
-    print(f"'{kw}' 관련 일본 쇼츠 {len(rows)}개 / 합계 조회수 {total:,}")
-    if len(rows) == 0:
-        print("→ 아직 일본판이 거의 없음: 선점 기회")
-    elif len(rows) < 5:
-        print("→ 일부 존재: 차별화하면 가능")
-    else:
-        print("→ 이미 많이 만들어짐: 포화 가능성 높음")
-    for r in rows[:10]:
-        print(f"{r['views']:>10,}회  {r['channel'][:15]:<15} {r['title'][:40]}  {r['url']}")
-    save(rows, "check")
+    r, similar, excluded = jp_check.check_keywords(kw, a.days, a.hit_views, a.refresh)
+    icon = {"선점 가능": "🟢", "차별화 필요": "🟡", "포화": "🔴"}[r["verdict"]]
+    print(f"일본 검색어: {kw}  (최근 {a.days}일, 검색 결과 쇼츠 {len(similar) + len(excluded)}개)\n")
+    print(f"{icon} [{r['verdict']}] {r['reason']}")
+    print("   ※ 제목에 검색어가 모두 들어간 영상만 '같은 소재'로 셌어요.\n")
+    print(f"✅ 같은 소재로 본 영상 ({len(similar)}개)")
+    for s in similar[:a.show]:
+        print(f"  {s['views']:>10,}회  {s['title'][:40]}  {s['url']}")
+    if not similar:
+        print("  (없음)")
+    print(f"\n✖ 제외한 영상 중 조회수 상위 (전체 {len(excluded)}개) — 같은 소재인데 빠졌다면 검색어를 바꿔 보세요")
+    for s in excluded[:a.show]:
+        print(f"  {s['views']:>10,}회  {s['title'][:40]}  {s['url']}")
+    save(similar + excluded, "check")
 
 
 def cmd_quota(a):
@@ -200,9 +201,11 @@ def main():
     t.add_argument("--top", type=int, default=30)
     t.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     t.set_defaults(func=cmd_trend)
-    c = sub.add_parser("check", help="소재의 일본 포화도 확인")
+    c = sub.add_parser("check", help="일본어 검색어로 포화도 확인 (무료, Claude 안 씀)")
     c.add_argument("--keywords", nargs="+", required=True)
-    c.add_argument("--days", type=int, default=365)
+    c.add_argument("--days", type=int, default=365, help="최근 며칠 안의 일본 영상과 비교")
+    c.add_argument("--hit-views", type=int, default=100000, help="이 조회수 이상이면 '뜬 영상'으로 봄")
+    c.add_argument("--show", type=int, default=5, help="목록을 몇 개씩 보여줄지")
     c.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     c.set_defaults(func=cmd_check)
     q = sub.add_parser("quota", help="오늘 사용한 할당량 보기")

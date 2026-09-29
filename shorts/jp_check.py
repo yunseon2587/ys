@@ -1,5 +1,6 @@
 """3단계: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 확인하고 '선점 가능 / 차별화 필요 / 포화'로 판정한다."""
 import json
+import unicodedata
 from datetime import datetime, timezone
 
 from . import youtube
@@ -131,6 +132,41 @@ def judge(similar, hit_views):
     if len(hits) <= 2:
         return "차별화 필요", base + " → 몇 개 떴으니 각도·편집을 다르게", len(hits)
     return "포화", base + " → 이미 여러 개가 성공함", len(hits)
+
+
+# ---------- Claude 없이 (무료): 제목에 검색어가 모두 들어간 영상만 같은 소재로 본다 ----------
+
+def _norm(text):
+    # 전각/반각, 대소문자 차이를 없앤다 (ＡＢＣ → abc)
+    return unicodedata.normalize("NFKC", text or "").lower()
+
+
+def keyword_match(query, rows):
+    """(같은 소재로 본 영상, 제외한 영상)을 돌려준다."""
+    words = [_norm(w) for w in query.split() if w.strip()]
+    similar, excluded = [], []
+    for r in rows:
+        title = _norm(r["title"])
+        (similar if all(w in title for w in words) else excluded).append(r)
+    return similar, excluded
+
+
+def check_keywords(query, jp_days=365, hit_views=100_000, refresh=False):
+    """일본어 검색어를 직접 넣어 확인 (Claude 사용 안 함, 약 102유닛)."""
+    rows = enrich(search_ids(query, jp_days, 1, refresh, region="JP", lang="ja"), refresh)
+    similar, excluded = keyword_match(query, rows)
+    similar.sort(key=lambda r: r["views"], reverse=True)
+    excluded.sort(key=lambda r: r["views"], reverse=True)
+    verdict, reason, hit_count = judge(similar, hit_views)
+    r = {
+        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "region": "직접입력",
+        "source_video_id": None, "source_title": query, "source_views": None, "source_url": "",
+        "thumbnail": "", "topic_ko": "", "jp_query": query,
+        "verdict": verdict, "reason": reason, "similar_count": len(similar), "hit_count": hit_count,
+        "similar": [{k: s[k] for k in ("title", "channel", "views", "url", "thumbnail")} for s in similar[:10]],
+    }
+    save_check(r)
+    return r, similar, excluded
 
 
 # ---------- 전체 흐름 ----------

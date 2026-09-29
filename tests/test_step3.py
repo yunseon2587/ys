@@ -80,3 +80,22 @@ class MissingKeyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@mock.patch("shorts.youtube.requests.get", side_effect=fake_get)
+class FreeCheckTest(unittest.TestCase):
+    def test_keyword_match_all_words_and_width(self, _):
+        rows = [{"title": "【神回】ドッキリ大成功"}, {"title": "ドッキリ集"}, {"title": "ＳＨＯＲＴＳ 神回 ドッキリ"}]
+        similar, excluded = jp_check.keyword_match("神回 ドッキリ", rows)
+        self.assertEqual([r["title"] for r in similar], ["【神回】ドッキリ大成功", "ＳＨＯＲＴＳ 神回 ドッキリ"])
+        self.assertEqual(len(excluded), 1)
+        self.assertEqual(len(jp_check.keyword_match("shorts", rows)[0]), 1)  # 전각 ＳＨＯＲＴＳ도 찾음
+
+    def test_check_keywords_no_claude(self, _):
+        with mock.patch("shorts.claude_ai.client") as claude:
+            r, similar, excluded = jp_check.check_keywords("猫")
+            claude.assert_not_called()                     # Claude를 전혀 안 씀
+        self.assertEqual([s["video_id"] for s in similar], ["v2"])  # '猫'가 제목에 있는 영상만
+        self.assertEqual(len(excluded), 3)
+        self.assertEqual(r["verdict"], "차별화 필요")        # 50만회 1개
+        self.assertEqual(jp_check.check_keywords("存在しない")[0]["verdict"], "선점 가능")
