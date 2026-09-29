@@ -36,6 +36,21 @@ def search_ids(keyword, days, pages, refresh=False, region="JP", lang="ja"):
     return ids
 
 
+def chart_ids(region, pages=4, refresh=False):
+    """그 나라 '인기 급상승' 차트의 영상 ID (50개당 1유닛). 쇼츠가 아닌 영상도 섞여 있다."""
+    ids, token = [], None
+    for _ in range(pages):
+        p = dict(part="id", chart="mostPopular", regionCode=region, maxResults=50)
+        if token:
+            p["pageToken"] = token
+        data = youtube.get("videos", ttl=0 if refresh else SEARCH_TTL, **p)
+        ids += [it["id"] for it in data.get("items", [])]
+        token = data.get("nextPageToken")
+        if not token:
+            break
+    return ids
+
+
 def enrich(ids, refresh=False):
     ttl = 0 if refresh else STATS_TTL
     videos = []
@@ -43,10 +58,12 @@ def enrich(ids, refresh=False):
         data = youtube.get("videos", ttl=ttl, part="snippet,statistics,contentDetails", id=",".join(c))
         videos += data.get("items", [])
     ch_ids = sorted({v["snippet"]["channelId"] for v in videos})
-    subs = {}
+    subs, country = {}, {}
     for c in chunks(ch_ids):
-        for ch in youtube.get("channels", ttl=ttl, part="statistics", id=",".join(c)).get("items", []):
+        # snippet을 같이 받아도 비용은 1유닛 그대로 (채널 국가 정보용)
+        for ch in youtube.get("channels", ttl=ttl, part="snippet,statistics", id=",".join(c)).get("items", []):
             subs[ch["id"]] = int(ch["statistics"].get("subscriberCount", 0) or 0)
+            country[ch["id"]] = ch.get("snippet", {}).get("country", "")
 
     now = datetime.now(timezone.utc)
     rows = []
@@ -64,6 +81,7 @@ def enrich(ids, refresh=False):
             "title": sn["title"],
             "channel": sn["channelTitle"],
             "channel_id": sn["channelId"],
+            "channel_country": country.get(sn["channelId"], ""),  # 채널이 설정한 국가 (없으면 빈칸)
             "views": views,
             "subs": s,
             "outlier": outlier(views, s),                               # 구독자 대비 조회수 배수

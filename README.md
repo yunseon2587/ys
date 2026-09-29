@@ -97,6 +97,47 @@ x2.0     2,000,000회 199,995/h  【神回】ドッキリ大成功  https://yout
 
 키워드에 띄어쓰기가 있으면 따옴표로 묶으세요: `--keywords "ケチャップ 逆さま" 神回`
 
+### 🌏 해외에서 터진 쇼츠 → 일본에 있을까? (무료)
+
+**① 한국·미국·영국에서 조회수가 터진 쇼츠 모으기**
+
+```bash
+python jp_shorts_finder.py overseas
+```
+
+결과 예시:
+```
+해외에서 터진 쇼츠 24개 (조회수 순)
+
+ 1. [US]  12,345,678회 · 85,000/h · x120.5  Guy tries ketchup upside down…
+    영상: https://youtube.com/shorts/...
+    번역: https://translate.google.com/?...   ← Ctrl+클릭하면 제목이 일본어로 번역돼요
+```
+
+- `[KR]`/`[US]`/`[GB]`: 채널이 설정한 국가예요. 국가를 설정하지 않은 채널은 검색한 지역으로 표시돼요.
+  일본 채널 영상은 빠져요.
+- **번역** 링크를 누르면 구글 번역에서 제목이 일본어로 바뀌어 나와요. ②의 검색어를 만들 때 참고하세요.
+- 결과는 `output/overseas_날짜.csv`로도 저장돼요 (엑셀로 열기).
+
+| 옵션 | 뜻 | 기본값 |
+|---|---|---|
+| `--regions` | 볼 나라 (`KR` 한국, `US` 미국, `GB` 영국) | 셋 다 |
+| `--days` | 최근 며칠 안에 올라온 영상 | 7 |
+| `--min-views` | 이 조회수보다 적으면 제외 | 500000 |
+| `--sort` | 정렬: `views` 조회수 / `vph` 시간당 조회수 / `outlier` 구독자 대비 배수 | views |
+| `--keywords` | 특정 분야만 검색 (예: `--keywords "life hack" prank`) | 없음 (`#shorts`로 검색) |
+| `--no-search` | 검색 없이 나라별 인기 차트만 (가장 저렴) | 꺼짐 |
+
+- 할당량: 3개국 기본 실행 시 약 **350유닛** (나라마다 검색 1회 100유닛 + 인기 차트 등).
+  `--keywords`를 2개 주면 나라당 검색이 2회라 약 650유닛. `--no-search`면 약 45유닛.
+- 같은 조건으로 12시간 안에 다시 실행하면 캐시를 써서 거의 0유닛이에요.
+
+**② 마음에 드는 영상이 일본에 있는지 확인** — 영상 소재를 일본어 단어 2~3개로 바꿔서 `check`에 넣어요.
+
+```bash
+python jp_shorts_finder.py check --keywords "ケチャップ 逆さま"
+```
+
 ### 🔎 체크: 이 소재로 일본 쇼츠가 이미 있을까? (무료, Claude 키 필요 없음)
 
 일본어 검색어를 **직접** 넣어서 확인해요. 한국어 소재는 파파고·구글 번역으로 일본어 단어 2~3개로 바꿔서 넣으세요.
@@ -278,7 +319,7 @@ YouTube API는 하루 **10,000유닛** 무료예요.
 
 ```
 jp_shorts_finder.py   ← 실행하는 파일
-shorts/               ← 내부 코드 (config, db, youtube, metrics, trending, rising, schedule, claude_ai, jp_check)
+shorts/               ← 내부 코드 (config, db, youtube, metrics, trending, rising, schedule, overseas, claude_ai, jp_check)
 tests/                ← 자동 테스트 (API 키 없이 가짜 데이터로 동작 확인)
 data/shorts.db        ← 캐시·할당량·수집 영상·조회수 기록 (자동 생성, 지우면 기록이 사라져요)
 data/snapshot.log     ← 자동 기록 실행 로그

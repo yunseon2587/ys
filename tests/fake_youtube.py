@@ -13,6 +13,7 @@ VIDEOS = {
     "v5": ("調味料チャレンジ", "c4", 3, "PT20S", 50_000),
 }
 SUBS = {"c1": 1_000_000, "c2": 5_000, "c3": 300_000, "c4": 0}
+COUNTRY = {"c1": "KR", "c2": "US", "c3": "JP", "c4": ""}
 
 
 class Resp:
@@ -47,6 +48,7 @@ def fake_get(url, params=None, timeout=None):
             })
         return Resp({"items": items})
     if ep == "channels":
-        return Resp({"items": [{"id": c, "statistics": {"subscriberCount": str(SUBS[c])}}
+        return Resp({"items": [{"id": c, "snippet": {"country": COUNTRY[c]} if COUNTRY[c] else {},
+                                "statistics": {"subscriberCount": str(SUBS[c])}}
                                for c in params["id"].split(",")]})
     raise AssertionError(ep)

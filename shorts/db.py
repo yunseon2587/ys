@@ -62,6 +62,20 @@ CREATE TABLE IF NOT EXISTS jp_checks (
     hit_count       INTEGER,
     similar_json    TEXT      -- 비슷한 일본 쇼츠 목록
 );
+CREATE TABLE IF NOT EXISTS overseas_videos (
+    video_id       TEXT PRIMARY KEY,
+    country        TEXT,      -- KR / US / GB
+    title          TEXT,
+    channel        TEXT,
+    views          INTEGER,
+    subs           INTEGER,
+    outlier        REAL,
+    views_per_hour INTEGER,
+    published_at   TEXT,
+    url            TEXT,
+    thumbnail      TEXT,
+    found_at       TEXT
+);
 """
 
 

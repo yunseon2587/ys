@@ -5,9 +5,8 @@ from datetime import datetime, timezone
 
 from . import youtube
 from .claude_ai import ask_json
-from .config import SEARCH_TTL
 from .db import connect
-from .trending import enrich, search_ids
+from .trending import chart_ids, enrich, search_ids
 
 LANG = {"KR": "ko", "US": "en", "JP": "ja"}
 JP_SEARCH_UNITS = 102  # 일본 검색 1회(100) + 영상·채널 정보(2)
@@ -17,17 +16,7 @@ JP_SEARCH_UNITS = 102  # 일본 검색 1회(100) + 영상·채널 정보(2)
 
 def popular_candidates(region, limit):
     """그 나라 '인기 급상승' 차트에서 쇼츠만 골라낸다. 50개당 1유닛이라 저렴하다."""
-    ids, token = [], None
-    for _ in range(4):  # 최대 200개 훑기
-        p = dict(part="id", chart="mostPopular", regionCode=region, maxResults=50)
-        if token:
-            p["pageToken"] = token
-        data = youtube.get("videos", ttl=SEARCH_TTL, **p)
-        ids += [it["id"] for it in data.get("items", [])]
-        token = data.get("nextPageToken")
-        if not token:
-            break
-    rows = enrich(ids)  # 3분 넘는 영상은 여기서 빠진다
+    rows = enrich(chart_ids(region))  # 3분 넘는 영상은 여기서 빠진다
     rows.sort(key=lambda r: r["views_per_hour"], reverse=True)
     return rows[:limit]
 

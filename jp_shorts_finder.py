@@ -16,7 +16,11 @@
   python jp_shorts_finder.py rising --hours 24
   python jp_shorts_finder.py schedule --every 3   # 3시간마다 자동 기록 등록
 
-  # 5) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
+  # 5) 해외(한국·미국·영국)에서 터진 쇼츠 모으기 → 골라서 check로 일본에 있는지 확인 (무료)
+  python jp_shorts_finder.py overseas --days 7
+  python jp_shorts_finder.py check --keywords "ケチャップ 逆さま"
+
+  # 6) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
   python jp_shorts_finder.py jpcheck --region KR --limit 5
   python jp_shorts_finder.py jpcheck --region US --keywords "life hack" --limit 5
   python jp_shorts_finder.py jpcheck --title "케첩 거꾸로 짜기 챌린지"
@@ -32,7 +36,7 @@ import sys
 from datetime import datetime
 
 from shorts import youtube
-from shorts import jp_check, schedule
+from shorts import jp_check, overseas, schedule
 from shorts.claude_ai import ClaudeError
 from shorts.claude_ai import client as claude_client
 from shorts.config import OUTPUT_DIR
@@ -89,6 +93,27 @@ def cmd_check(a):
     for s in excluded[:a.show]:
         print(f"  {s['views']:>10,}회  {s['title'][:40]}  {s['url']}")
     save(similar + excluded, "check")
+
+
+def cmd_overseas(a):
+    need = overseas.estimate_units(len(a.regions), len(a.keywords or []), not a.no_search)
+    print(f"{', '.join(overseas.REGIONS[r][1] for r in a.regions)} · 최근 {a.days}일 · 조회수 {a.min_views:,} 이상"
+          f" (캐시가 없으면 약 {need:,}유닛 사용)")
+    rows = overseas.collect(a.regions, a.keywords, a.days, a.min_views, a.sort, not a.no_search, a.refresh)
+    sort_name = {"views": "조회수", "vph": "시간당 조회수", "outlier": "구독자 대비 배수"}[a.sort]
+    print(f"\n해외에서 터진 쇼츠 {len(rows)}개 ({sort_name} 순)\n")
+    for i, r in enumerate(rows[:a.top], 1):
+        x = f"x{r['outlier']}" if r["outlier"] else "x-"
+        print(f"{i:>2}. [{r['country']}] {r['views']:>11,}회 · {r['views_per_hour']:>7,}/h · {x:<7} {r['title'][:50]}")
+        print(f"    영상: {r['url']}")
+        print(f"    번역: {r['translate']}")
+    if rows:
+        print("\n다음 단계: 마음에 드는 영상의 소재를 일본어 단어 2~3개로 바꿔서 일본에 있는지 확인하세요.")
+        print('  python jp_shorts_finder.py check --keywords "일본어 검색어"')
+    else:
+        print("조건에 맞는 영상이 없어요. --min-views 를 낮추거나 --days 를 늘려 보세요.")
+    save(rows, "overseas", ["country", "views", "views_per_hour", "outlier", "subs", "published",
+                            "title", "channel", "url", "translate", "video_id"])
 
 
 def cmd_quota(a):
@@ -223,6 +248,18 @@ def main():
     sc.set_defaults(func=cmd_schedule)
     us = sub.add_parser("unschedule", help="조회수 자동 기록 해제")
     us.set_defaults(func=cmd_unschedule)
+    ov = sub.add_parser("overseas", help="한국·미국·영국에서 조회수 터진 쇼츠 모으기 (무료)")
+    ov.add_argument("--regions", nargs="+", choices=list(overseas.REGIONS), default=list(overseas.REGIONS),
+                    help="볼 나라 (KR 한국, US 미국, GB 영국)")
+    ov.add_argument("--keywords", nargs="+", help="이 키워드로 검색 (없으면 #shorts 로 검색)")
+    ov.add_argument("--days", type=int, default=7, help="최근 며칠 안에 올라온 영상")
+    ov.add_argument("--min-views", type=int, default=500000, help="이 조회수보다 적으면 제외")
+    ov.add_argument("--sort", choices=["views", "vph", "outlier"], default="views",
+                    help="정렬: views 조회수 / vph 시간당 조회수 / outlier 구독자 대비 배수")
+    ov.add_argument("--top", type=int, default=30, help="화면에 보여줄 개수")
+    ov.add_argument("--no-search", action="store_true", help="검색 없이 인기 차트만 (나라당 약 15유닛)")
+    ov.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
+    ov.set_defaults(func=cmd_overseas)
     jc = sub.add_parser("jpcheck", help="한국·미국 인기 쇼츠의 일본판이 있는지 확인 (Claude 사용)")
     jc.add_argument("--region", choices=["KR", "US"], default="KR", help="어느 나라에서 뜬 쇼츠를 볼지")
     jc.add_argument("--keywords", nargs="+", help="그 나라에서 이 키워드로 검색 (없으면 인기 차트 사용)")
