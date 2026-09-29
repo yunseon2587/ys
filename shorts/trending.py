@@ -5,6 +5,7 @@ from . import youtube
 from .config import SEARCH_TTL, STATS_TTL
 from .db import connect
 from .metrics import MAX_SHORT_SEC, iso_to_sec, outlier, views_per_hour
+from .rising import record_snapshot
 
 
 def chunks(lst, n=50):
@@ -81,6 +82,7 @@ def save_videos(rows, keyword):
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with connect() as con:
         for r in rows:
+            record_snapshot(con, r["video_id"], r["views"], r["likes"])
             con.execute("""
                 INSERT INTO videos(video_id, title, channel_id, channel, published_at, duration_sec,
                                    thumbnail, subs, views, likes, keyword, first_seen, last_seen)

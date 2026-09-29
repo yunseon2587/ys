@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS videos (
     first_seen   TEXT,
     last_seen    TEXT
 );
+CREATE TABLE IF NOT EXISTS snapshots (
+    video_id TEXT NOT NULL,
+    taken_at REAL NOT NULL,      -- 유닉스 시간(초)
+    views    INTEGER NOT NULL,
+    likes    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_snap ON snapshots(video_id, taken_at);
 """
 
 
