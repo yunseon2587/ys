@@ -40,6 +40,22 @@ class OverseasTest(unittest.TestCase):
         only_long = overseas.collect(["KR", "US"], min_views=0, kind="long")
         self.assertEqual([r["video_id"] for r in only_long], ["v4"])
 
+    def test_music_excluded_by_default(self, _):
+        with mock.patch.dict("tests.fake_youtube.CATEGORY", {"v2": "10"}):
+            ids = [r["video_id"] for r in overseas.collect(["KR", "US"], min_views=0)]
+            self.assertNotIn("v2", ids)
+            ids = [r["video_id"] for r in overseas.collect(["KR", "US"], min_views=0, include_music=True)]
+            self.assertIn("v2", ids)
+
+    def test_short_horizontal_video_is_not_shorts(self, _):
+        # 3분 이하라도 가로 영상(뮤직비디오 등)이면 쇼츠가 아님
+        with mock.patch.dict("tests.fake_youtube.VIDEOS", {"v2": ("MV", "c2", 48, "PT2M50S", 500_000)}), \
+                mock.patch("tests.fake_youtube.HORIZONTAL", {"v2", "v4"}):
+            rows = {r["video_id"]: r for r in overseas.collect(["KR", "US"], min_views=0)}
+        self.assertEqual(rows["v2"]["kind"], "롱폼")
+        self.assertEqual(rows["v2"]["url"], "https://youtube.com/watch?v=v2")
+        self.assertEqual(rows["v1"]["kind"], "쇼츠")
+
     def test_estimate(self, _):
         self.assertEqual(overseas.estimate_units(3), 3 * 117)                      # 차트 + #shorts 검색
         self.assertEqual(overseas.estimate_units(3, kind="long"), 3 * 15)          # 롱폼은 차트만

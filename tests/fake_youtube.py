@@ -12,6 +12,8 @@ VIDEOS = {
     "v4": ("긴 영상(쇼츠 아님)", "c1", 5, "PT10M", 9_000_000),
     "v5": ("調味料チャレンジ", "c4", 3, "PT20S", 50_000),
 }
+HORIZONTAL = {"v4"}   # 가로 영상 (나머지는 세로)
+CATEGORY = {}         # video_id → categoryId (없으면 "24" 엔터테인먼트)
 SUBS = {"c1": 1_000_000, "c2": 5_000, "c3": 300_000, "c4": 0}
 COUNTRY = {"c1": "KR", "c2": "US", "c3": "JP", "c4": ""}
 
@@ -41,10 +43,13 @@ def fake_get(url, params=None, timeout=None):
             items.append({
                 "id": vid,
                 "snippet": {"title": title, "channelId": ch, "channelTitle": f"チャンネル{ch}",
+                            "categoryId": CATEGORY.get(vid, "24"),
                             "publishedAt": (NOW - timedelta(hours=hrs)).strftime("%Y-%m-%dT%H:%M:%SZ"),
                             "thumbnails": {"high": {"url": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"}}},
                 "statistics": {"viewCount": str(views), "likeCount": str(views // 50)},
                 "contentDetails": {"duration": dur},
+                "player": {"embedWidth": "1138", "embedHeight": "640"} if vid in HORIZONTAL
+                else {"embedWidth": "360", "embedHeight": "640"},
             })
         return Resp({"items": items})
     if ep == "channels":

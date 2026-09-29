@@ -69,6 +69,12 @@ class Step1Test(unittest.TestCase):
             with self.assertRaisesRegex(youtube.YouTubeError, "YT_API_KEY"):
                 youtube.get("search", q="x")
 
+    def test_is_vertical(self):
+        from shorts.metrics import is_vertical
+        self.assertTrue(is_vertical({"embedWidth": "360", "embedHeight": "640"}))
+        self.assertFalse(is_vertical({"embedWidth": 1138, "embedHeight": 640}))
+        self.assertIsNone(is_vertical({}))  # 정보 없으면 길이로만 판단
+
     def test_missing_key(self):
         with mock.patch("shorts.youtube.yt_key", return_value=""):
             with self.assertRaisesRegex(youtube.YouTubeError, ".env"):

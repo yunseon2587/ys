@@ -23,3 +23,13 @@ def views_per_hour(views, published_at, now=None):
     pub = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
     hours = max((now - pub).total_seconds() / 3600, 1)
     return int(views / hours)
+
+
+def is_vertical(player):
+    """세로 영상인지. videos.list에 part=player, maxHeight를 주면 화면비에 맞춘 크기가 온다.
+    크기 정보가 없으면 None (그때는 길이로만 판단)."""
+    try:
+        w, h = int(player["embedWidth"]), int(player["embedHeight"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return h > w

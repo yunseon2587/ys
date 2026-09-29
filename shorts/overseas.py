@@ -15,6 +15,7 @@ SORT_KEYS = {
 }
 
 
+MUSIC_CATEGORY = "10"  # YouTube 카테고리 '음악' (뮤직비디오·음원)
 KINDS = {"all": ("쇼츠", "롱폼"), "shorts": ("쇼츠",), "long": ("롱폼",)}
 
 
@@ -43,7 +44,7 @@ def translate_link(title):
 
 
 def collect(regions=("KR", "US", "GB"), keywords=None, days=7, min_views=500_000,
-            sort="views", use_search=True, refresh=False, kind="all"):
+            sort="views", use_search=True, refresh=False, kind="all", include_music=False):
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     found = {}
     for region in regions:
@@ -54,6 +55,8 @@ def collect(regions=("KR", "US", "GB"), keywords=None, days=7, min_views=500_000
         for r in enrich(ids, refresh, include_long=kind != "shorts"):
             if r["kind"] not in KINDS[kind]:
                 continue
+            if not include_music and r["category_id"] == MUSIC_CATEGORY:
+                continue  # 뮤직비디오는 저작권 때문에 편집·재업로드가 어려워 기본 제외
             # 채널이 국가를 설정했으면 그걸 믿고, 없으면 찾은 지역으로 본다
             country = r["channel_country"] or region
             if country not in regions or r["published"] < since or r["views"] < min_views:

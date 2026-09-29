@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from . import youtube
 from .config import SEARCH_TTL, STATS_TTL
 from .db import connect
-from .metrics import MAX_SHORT_SEC, iso_to_sec, outlier, views_per_hour
+from .metrics import MAX_SHORT_SEC, is_vertical, iso_to_sec, outlier, views_per_hour
 from .rising import record_snapshot
 
 
@@ -57,7 +57,9 @@ def enrich(ids, refresh=False, include_long=False):
     ttl = 0 if refresh else STATS_TTL
     videos = []
     for c in chunks(list(dict.fromkeys(ids))):
-        data = youtube.get("videos", ttl=ttl, part="snippet,statistics,contentDetails", id=",".join(c))
+        # player + maxHeight: 화면비(세로/가로) 확인용. part를 늘려도 비용은 1유닛 그대로
+        data = youtube.get("videos", ttl=ttl, part="snippet,statistics,contentDetails,player",
+                           maxHeight=640, id=",".join(c))
         videos += data.get("items", [])
     ch_ids = sorted({v["snippet"]["channelId"] for v in videos})
     subs, country = {}, {}
@@ -71,7 +73,8 @@ def enrich(ids, refresh=False, include_long=False):
     rows = []
     for v in videos:
         sec = iso_to_sec(v["contentDetails"].get("duration"))
-        is_short = 0 < sec <= MAX_SHORT_SEC
+        # 쇼츠 = 3분 이하 + 세로 영상. 3분 이하 가로 영상(뮤직비디오·예고편 등)은 일반 영상으로 본다
+        is_short = 0 < sec <= MAX_SHORT_SEC and is_vertical(v.get("player", {})) is not False
         if sec == 0 or (not is_short and not include_long):
             continue
         st, sn = v["statistics"], v["snippet"]
@@ -94,6 +97,7 @@ def enrich(ids, refresh=False, include_long=False):
             "published": sn["publishedAt"],
             "thumbnail": thumb,
             "kind": "쇼츠" if is_short else "롱폼",
+            "category_id": sn.get("categoryId", ""),
             "url": f"https://youtube.com/shorts/{v['id']}" if is_short else f"https://youtube.com/watch?v={v['id']}",
         })
     return rows

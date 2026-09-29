@@ -32,6 +32,7 @@ API 키는 .env 파일의 YT_API_KEY, ANTHROPIC_API_KEY에서 읽습니다.
 import argparse
 import csv
 import platform
+import re
 import sys
 from datetime import datetime
 
@@ -79,6 +80,12 @@ def cmd_trend(a):
 
 def cmd_check(a):
     kw = " ".join(a.keywords)
+    if re.search(r"[가-힣]", kw):
+        print(f"검색어에 한국어가 있어요: {kw}")
+        print("일본 영상 제목과 비교하므로 일본어로 바꿔서 넣어야 해요. (할당량은 쓰지 않았어요)")
+        print('  예) 케첩 거꾸로 → python jp_shorts_finder.py check --keywords "ケチャップ 逆さま"')
+        print("  overseas 결과의 '번역' 링크를 누르면 제목이 일본어로 번역돼요. 거기서 핵심 단어 2~3개를 고르세요.")
+        return
     r, similar, excluded = jp_check.check_keywords(kw, a.days, a.hit_views, a.refresh, a.type == "all")
     icon = {"선점 가능": "🟢", "차별화 필요": "🟡", "포화": "🔴"}[r["verdict"]]
     what = "쇼츠+롱폼" if a.type == "all" else "쇼츠"
@@ -102,7 +109,7 @@ def cmd_overseas(a):
     print(f"{', '.join(overseas.REGIONS[r][1] for r in a.regions)} · {kind_name} · 최근 {a.days}일"
           f" · 조회수 {a.min_views:,} 이상 (캐시가 없으면 약 {need:,}유닛 사용)")
     rows = overseas.collect(a.regions, a.keywords, a.days, a.min_views, a.sort, not a.no_search, a.refresh,
-                            a.type)
+                            a.type, a.include_music)
     sort_name = {"views": "조회수", "vph": "시간당 조회수", "outlier": "구독자 대비 배수"}[a.sort]
     n_short = sum(r["kind"] == "쇼츠" for r in rows)
     print(f"\n해외에서 터진 영상 {len(rows)}개 (쇼츠 {n_short} · 롱폼 {len(rows) - n_short}, {sort_name} 순)\n")
@@ -114,7 +121,8 @@ def cmd_overseas(a):
         print(f"    번역: {r['translate']}")
     if rows:
         print("\n다음 단계: 마음에 드는 영상의 소재를 일본어 단어 2~3개로 바꿔서 일본에 있는지 확인하세요.")
-        print('  python jp_shorts_finder.py check --keywords "일본어 검색어"')
+        print("  1) 영상의 '번역' 링크를 Ctrl+클릭 → 일본어 제목에서 핵심 단어 2~3개 고르기")
+        print('  2) python jp_shorts_finder.py check --keywords "ケチャップ 逆さま"   ← 예시. 고른 일본어 단어로 바꾸세요')
     else:
         print("조건에 맞는 영상이 없어요. --min-views 를 낮추거나 --days 를 늘려 보세요.")
     save(rows, "overseas", ["country", "kind", "sec", "views", "views_per_hour", "outlier", "subs", "published",
@@ -267,6 +275,7 @@ def main():
                     help="정렬: views 조회수 / vph 시간당 조회수 / outlier 구독자 대비 배수")
     ov.add_argument("--top", type=int, default=30, help="화면에 보여줄 개수")
     ov.add_argument("--no-search", action="store_true", help="검색 없이 인기 차트만 (나라당 약 15유닛)")
+    ov.add_argument("--include-music", action="store_true", help="뮤직비디오도 포함 (기본은 제외)")
     ov.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     ov.set_defaults(func=cmd_overseas)
     jc = sub.add_parser("jpcheck", help="한국·미국 인기 쇼츠의 일본판이 있는지 확인 (Claude 사용)")
