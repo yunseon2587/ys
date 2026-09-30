@@ -20,7 +20,12 @@
   python jp_shorts_finder.py overseas --days 7              # 쇼츠+롱폼 (--type shorts / long)
   python jp_shorts_finder.py check --keywords "ケチャップ 逆さま"
 
-  # 6) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
+  # 6) 국뽕 소재 찾기 → 대본 시트 만들기 (무료)
+  python jp_shorts_finder.py kukppong                       # 벤치마킹용 한국 국뽕 쇼츠 + 외국인 원본 영상
+  python jp_shorts_finder.py kukppong --mode source --max-subs 100000   # 신인 외국인 채널 발굴
+  python jp_shorts_finder.py script https://youtube.com/shorts/영상ID   # 대본 엑셀 시트
+
+  # 7) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
   python jp_shorts_finder.py jpcheck --region KR --limit 5
   python jp_shorts_finder.py jpcheck --region US --keywords "life hack" --limit 5
   python jp_shorts_finder.py jpcheck --title "케첩 거꾸로 짜기 챌린지"
@@ -37,7 +42,7 @@ import sys
 from datetime import datetime
 
 from shorts import youtube
-from shorts import jp_check, overseas, schedule
+from shorts import jp_check, kukppong, overseas, schedule, script_sheet
 from shorts.claude_ai import ClaudeError
 from shorts.claude_ai import client as claude_client
 from shorts.config import OUTPUT_DIR
@@ -132,6 +137,46 @@ def cmd_overseas(a):
         print("조건에 맞는 영상이 없어요. --min-views 를 낮추거나 --days 를 늘려 보세요.")
     save(rows, "overseas", ["country", "kind", "sec", "views", "views_per_hour", "outlier", "subs", "published",
                             "title", "channel", "url", "translate", "video_id"])
+
+
+def cmd_kukppong(a):
+    modes = ["bench", "source"] if a.mode == "both" else [a.mode]
+    need = kukppong.estimate_units(modes, a.keywords)
+    print(f"최근 {a.days}일 · 조회수 {a.min_views:,} 이상"
+          + (f" · 구독자 {a.max_subs:,}명 이하" if a.max_subs is not None else "")
+          + f" (캐시가 없으면 약 {need:,}유닛 사용)")
+    sort_name = {"views": "조회수", "vph": "시간당 조회수", "outlier": "구독자 대비 배수"}[a.sort]
+    all_rows = []
+    for mode in modes:
+        rows = kukppong.collect(mode, a.keywords, a.days, a.min_views, a.max_subs, a.sort, a.refresh)
+        all_rows += rows
+        queries = a.keywords or kukppong.PRESETS[mode]["queries"]
+        print(f"\n■ {kukppong.MODE_NAME[mode]} — {len(rows)}개 ({sort_name} 순)")
+        print(f"  검색어: {', '.join(queries)}\n")
+        for i, r in enumerate(rows[:a.top], 1):
+            x = f"x{r['outlier']}" if r["outlier"] else "x-"
+            kind = r["kind"] if r["kind"] == "쇼츠" else f"롱폼 {script_sheet.fmt_duration(r['sec'])}"
+            print(f"{i:>2}. [{kind}] {r['views']:>11,}회 · {x:<7} · 구독자 {r['subs']:>9,}  {r['title'][:45]}")
+            print(f"    영상: {r['url']}")
+            print(f"    채널: {r['channel'][:30]}  {r['channel_url']}")
+        if not rows:
+            print("  조건에 맞는 영상이 없어요. --min-views 를 낮추거나 --days 를 늘려 보세요.")
+    if all_rows:
+        print("\n다음 단계: 만들고 싶은 영상의 '영상' 주소로 대본 시트를 만드세요.")
+        print("  python jp_shorts_finder.py script 영상주소")
+    save(all_rows, "kukppong", ["mode", "kind", "sec", "views", "subs", "outlier", "views_per_hour", "published",
+                                "title", "channel", "channel_url", "url", "video_id"])
+
+
+def cmd_script(a):
+    made, missing = script_sheet.make_sheets(a.videos)
+    for path in made:
+        print(f"대본 시트 저장: {path}")
+    for m in missing:
+        print(f"영상을 찾지 못했어요: {m}  (주소나 ID를 다시 확인하세요)")
+    if made:
+        print("\n엑셀로 열어서 '수정 전'에 원본 대사를, '수정 후'에 내 나레이션을 적으세요.")
+        print("'작성 가이드' 탭에 기승전결 구성과 체크리스트가 있어요.")
 
 
 def cmd_quota(a):
@@ -284,6 +329,21 @@ def main():
                     help="분야 거르기 끄기 (영화·예고편·뮤직비디오 등도 포함)")
     ov.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
     ov.set_defaults(func=cmd_overseas)
+    kp = sub.add_parser("kukppong", help="국뽕 소재 찾기: 벤치마킹 쇼츠 + 외국인 원본 영상 (무료)")
+    kp.add_argument("--mode", choices=["both", "bench", "source"], default="both",
+                    help="both 둘 다 / bench 한국 국뽕 쇼츠(벤치마킹) / source 외국인 원본 영상")
+    kp.add_argument("--keywords", nargs="+", help="검색어 직접 지정 (없으면 기본 검색어)")
+    kp.add_argument("--days", type=int, default=30, help="최근 며칠 안에 올라온 영상")
+    kp.add_argument("--min-views", type=int, default=100000, help="이 조회수보다 적으면 제외")
+    kp.add_argument("--max-subs", type=int, help="구독자가 이보다 많은 채널 제외 (신인 발굴용, 예: 100000)")
+    kp.add_argument("--sort", choices=["views", "vph", "outlier"], default="outlier",
+                    help="정렬: outlier 구독자 대비 배수(기본) / views 조회수 / vph 시간당 조회수")
+    kp.add_argument("--top", type=int, default=20, help="종류별로 보여줄 개수")
+    kp.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
+    kp.set_defaults(func=cmd_kukppong)
+    sc2 = sub.add_parser("script", help="영상 주소로 대본 작성 엑셀 시트 만들기")
+    sc2.add_argument("videos", nargs="+", help="유튜브 영상 주소 또는 ID (여러 개 가능)")
+    sc2.set_defaults(func=cmd_script)
     jc = sub.add_parser("jpcheck", help="한국·미국 인기 쇼츠의 일본판이 있는지 확인 (Claude 사용)")
     jc.add_argument("--region", choices=["KR", "US"], default="KR", help="어느 나라에서 뜬 쇼츠를 볼지")
     jc.add_argument("--keywords", nargs="+", help="그 나라에서 이 키워드로 검색 (없으면 인기 차트 사용)")

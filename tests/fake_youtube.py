@@ -41,6 +41,8 @@ def fake_get(url, params=None, timeout=None):
     if ep == "videos":
         items = []
         for vid in params["id"].split(","):
+            if vid not in VIDEOS:
+                continue  # 실제 API도 없는 영상 ID는 결과에서 빼고 돌려준다
             title, ch, hrs, dur, views = VIDEOS[vid]
             items.append({
                 "id": vid,

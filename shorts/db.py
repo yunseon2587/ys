@@ -62,6 +62,23 @@ CREATE TABLE IF NOT EXISTS jp_checks (
     hit_count       INTEGER,
     similar_json    TEXT      -- 비슷한 일본 쇼츠 목록
 );
+CREATE TABLE IF NOT EXISTS kukppong_videos (
+    video_id       TEXT PRIMARY KEY,
+    mode           TEXT,      -- bench(한국 국뽕 쇼츠) / source(외국인 원본)
+    kind           TEXT,      -- 쇼츠 / 롱폼
+    duration_sec   INTEGER,
+    title          TEXT,
+    channel        TEXT,
+    channel_id     TEXT,
+    views          INTEGER,
+    subs           INTEGER,
+    outlier        REAL,
+    views_per_hour INTEGER,
+    published_at   TEXT,
+    url            TEXT,
+    thumbnail      TEXT,
+    found_at       TEXT
+);
 CREATE TABLE IF NOT EXISTS overseas_videos (
     video_id       TEXT PRIMARY KEY,
     country        TEXT,      -- KR / US / GB

@@ -164,6 +164,56 @@ python jp_shorts_finder.py check --keywords "フォートナイト フレディ"
 
 ⚠️ 검색어는 반드시 **일본어**로 넣으세요. 한국어가 들어 있으면 할당량을 쓰기 전에 멈추고 알려줘요.
 
+### 🇰🇷 국뽕 소재 찾기 → 대본 시트 만들기 (무료)
+
+외국인이 한국을 경험하고 놀라는 **국뽕** 영상을 만들 때 쓰는 흐름이에요.
+
+**① 소재 찾기**
+
+```bash
+python jp_shorts_finder.py kukppong
+```
+
+두 가지 목록이 나와요 (기본: 최근 30일, 조회수 10만 이상, **구독자 대비 배수** 순).
+
+| 목록 | 뭘 보여주나 | 어디에 쓰나 |
+|---|---|---|
+| **벤치마킹용 한국 국뽕 쇼츠** | `외국인 반응 한국`, `한국 여행 외국인` 등으로 찾은 한국 국뽕 쇼츠 | 어떤 후킹·구조가 터지는지 분석 |
+| **원본 소스: 외국인 영상** | `first time in Korea`, `Korean food reaction` 등으로 찾은 외국인 크리에이터 영상 (쇼츠+롱폼) | 편집할 원본 소스 |
+
+결과 예시:
+```
+■ 원본 소스: 한국을 경험하는 외국인 영상 — 18개 (구독자 대비 배수 순)
+ 1. [롱폼 12:04]   1,234,567회 · x45.2   · 구독자    27,300  First time eating Korean breakfast…
+    영상: https://youtube.com/watch?v=...
+    채널: Adam in Seoul  https://youtube.com/channel/...   ← 사용 허락 연락할 때 여기로
+```
+
+- **신인 외국인 채널 찾기**: 구독자가 적은데 조회수가 터진 채널만 보기
+  ```bash
+  python jp_shorts_finder.py kukppong --mode source --max-subs 100000
+  ```
+- 옵션: `--mode bench`(벤치마킹만) / `--mode source`(원본만), `--keywords "검색어"`(직접 지정),
+  `--days`, `--min-views`, `--sort views|vph|outlier`, `--top`(종류별 개수, 기본 20)
+- 할당량: 기본 약 **820유닛** (검색 8회). `--mode` 하나만 하면 약 410유닛. 12시간 캐시.
+
+**② 대본 시트 만들기** — 고른 영상의 주소를 넣으면 엑셀 파일이 생겨요 (영상 정보 조회 약 2유닛).
+
+```bash
+python jp_shorts_finder.py script https://youtube.com/shorts/영상ID
+```
+
+`output/script_날짜_영상ID.xlsx`가 만들어져요 (여러 주소를 띄어쓰기로 이어서 넣으면 한 번에 여러 개).
+
+- **대본** 탭: 위쪽에 영상 정보(원본 주소·채널·출처 표기 문구·사용 허락 체크),
+  아래에 **수정 전 / 수정 후** 표 — `구간 | 타임라인 | 화자 | 원문 | 번역 대사 or 나레이션`.
+  구간 칸에 **기(0~3초 후킹) · 승 · 전 · 결** 줄이 미리 나뉘어 있어요.
+- **작성 가이드** 탭: 기승전결에서 할 일, 나레이션 팁, 체크리스트.
+
+⚠️ **저작권**: 다른 사람 영상을 잘라 쓰는 방식이라 **원작자에게 사용 허락을 받는 걸** 권해요.
+"출처" 표기만으로는 허락이 되지 않아서, 신고되면 영상 삭제나 채널 경고를 받을 수 있어요.
+신인 채널은 홍보가 되니 허락해 주는 경우가 많아요. 대본 시트의 '사용 허락' 칸에 기록해 두세요.
+
 ### 🔎 체크: 이 소재로 일본 쇼츠가 이미 있을까? (무료, Claude 키 필요 없음)
 
 일본어 검색어를 **직접** 넣어서 확인해요. 한국어 소재는 파파고·구글 번역으로 일본어 단어 2~3개로 바꿔서 넣으세요.
@@ -347,7 +397,7 @@ YouTube API는 하루 **10,000유닛** 무료예요.
 
 ```
 jp_shorts_finder.py   ← 실행하는 파일
-shorts/               ← 내부 코드 (config, db, youtube, metrics, trending, rising, schedule, overseas, claude_ai, jp_check)
+shorts/               ← 내부 코드 (config, db, youtube, metrics, trending, rising, schedule, overseas, kukppong, script_sheet, claude_ai, jp_check)
 tests/                ← 자동 테스트 (API 키 없이 가짜 데이터로 동작 확인)
 data/shorts.db        ← 캐시·할당량·수집 영상·조회수 기록 (자동 생성, 지우면 기록이 사라져요)
 data/snapshot.log     ← 자동 기록 실행 로그
