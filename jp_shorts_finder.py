@@ -25,7 +25,10 @@
   python jp_shorts_finder.py kukppong --mode source --max-subs 100000   # 신인 외국인 채널 발굴
   python jp_shorts_finder.py script https://youtube.com/shorts/영상ID   # 대본 엑셀 시트
 
-  # 7) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
+  # 7) 장르 비교: 일본 쇼츠에서 아이돌 자컨 / 한국 예능 / 미국 버라이어티 / 일본판 국뽕 성과 비교 (무료)
+  python jp_shorts_finder.py genre
+
+  # 8) 일본판 확인: 한국·미국에서 뜬 쇼츠가 일본에도 있는지 (Claude API 사용)
   python jp_shorts_finder.py jpcheck --region KR --limit 5
   python jp_shorts_finder.py jpcheck --region US --keywords "life hack" --limit 5
   python jp_shorts_finder.py jpcheck --title "케첩 거꾸로 짜기 챌린지"
@@ -39,10 +42,11 @@ import csv
 import platform
 import re
 import sys
+import unicodedata
 from datetime import datetime
 
 from shorts import youtube
-from shorts import jp_check, kukppong, overseas, schedule, script_sheet
+from shorts import genre, jp_check, kukppong, overseas, schedule, script_sheet
 from shorts.claude_ai import ClaudeError
 from shorts.claude_ai import client as claude_client
 from shorts.config import OUTPUT_DIR
@@ -177,6 +181,54 @@ def cmd_script(a):
     if made:
         print("\n엑셀로 열어서 '수정 전'에 원본 대사를, '수정 후'에 내 나레이션을 적으세요.")
         print("'작성 가이드' 탭에 기승전결 구성과 체크리스트가 있어요.")
+
+
+def pad(text, width, right=False):
+    """한글·일본어는 터미널에서 2칸을 차지하므로 화면 폭 기준으로 맞춘다."""
+    text = str(text)
+    w = sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+    space = " " * max(width - w, 0)
+    return space + text if right else text + space
+
+
+def cmd_genre(a):
+    need = genre.estimate_units(a.genres, a.keywords)
+    print(f"일본 쇼츠 · 최근 {a.days}일 · 검색 '조회수 순' 상위 영상 기준 (캐시가 없으면 약 {need:,}유닛 사용)\n")
+    results = genre.compare(a.genres, a.keywords, a.days, a.refresh)
+
+    head = [("장르", 26), ("영상 수", 8), ("중간 조회수", 12), ("10만+", 7), ("100만+", 7), ("중간 배수", 10),
+            ("1000만까지", 11)]
+    print("".join(pad(h, w, i > 0) for i, (h, w) in enumerate(head)))
+    for g in results:
+        x = f"x{g['median_outlier']}" if g["median_outlier"] else "-"
+        goal = f"{g['videos_for_goal']:,}개" if g["videos_for_goal"] else "-"
+        cells = [g["name"], g["count"], f"{g['median_views']:,}", g["over_100k"], g["over_1m"], x, goal]
+        print("".join(pad(c, w, i > 0) for i, (c, (_, w)) in enumerate(zip(cells, head))))
+    print("\n  · 중간 조회수: 영상을 조회수 순으로 줄 세웠을 때 가운데 값 (평균보다 '보통 영상'에 가까움)")
+    print("  · 중간 배수: 구독자 대비 조회수의 중간값. 높을수록 작은 채널도 터지는 장르")
+    print("  · 1000만까지: 내 영상이 이 장르의 중간 조회수만큼 나온다고 칠 때 필요한 영상 수 (참고용 —")
+    print("    검색 상위 영상 기준이라 실제 새 채널은 이보다 더 많이 필요할 수 있어요)")
+
+    for g in results:
+        print(f"\n■ {g['name']}  — 검색어: {', '.join(g['queries'])}")
+        if not g["count"]:
+            print("  최근 영상이 없어요. --days 를 늘려 보세요.")
+            continue
+        print(f"  잘하는 일본 채널 TOP {a.top} (이 검색 결과 안에서 조회수 합계 순):")
+        for c in g["channels"][:a.top]:
+            print(f"    {pad(c['channel'][:20], 22)} 영상 {c['videos']}개 · 합계 {c['views']:>11,}회 · "
+                  f"구독자 {c['subs']:>9,}  https://youtube.com/channel/{c['channel_id']}")
+        print("  조회수 상위 영상:")
+        for r in g["videos"][:3]:
+            print(f"    {r['views']:>11,}회  {r['title'][:40]}  {r['url']}")
+
+    rows = [{"genre": g["name"], "count": g["count"], "median_views": g["median_views"], "over_100k": g["over_100k"],
+             "over_1m": g["over_1m"], "median_outlier": g["median_outlier"], "videos_for_goal": g["videos_for_goal"],
+             "queries": " / ".join(g["queries"])} for g in results]
+    save(rows, "genre", list(rows[0].keys()) if rows else [])
+    channels = [{"genre": g["name"], **c, "channel_url": f"https://youtube.com/channel/{c['channel_id']}"}
+                for g in results for c in g["channels"]]
+    save(channels, "genre_channels", ["genre", "channel", "videos", "views", "subs", "channel_url"])
 
 
 def cmd_quota(a):
@@ -344,6 +396,14 @@ def main():
     sc2 = sub.add_parser("script", help="영상 주소로 대본 작성 엑셀 시트 만들기")
     sc2.add_argument("videos", nargs="+", help="유튜브 영상 주소 또는 ID (여러 개 가능)")
     sc2.set_defaults(func=cmd_script)
+    ge = sub.add_parser("genre", help="장르 비교: 일본 쇼츠에서 장르별 성과 + 잘하는 채널 (무료)")
+    ge.add_argument("--genres", nargs="+", choices=list(genre.GENRES), default=list(genre.GENRES),
+                    help="idol 아이돌 자컨 / kvariety 한국 예능 / usvariety 미국 버라이어티 / jpreaction 일본판 국뽕")
+    ge.add_argument("--keywords", nargs="+", help="일본어 검색어로 '직접 입력' 장르 하나만 보기")
+    ge.add_argument("--days", type=int, default=30, help="최근 며칠 안에 올라온 영상 기준")
+    ge.add_argument("--top", type=int, default=5, help="장르별로 보여줄 채널 수")
+    ge.add_argument("--refresh", action="store_true", help="캐시 무시하고 새로 검색")
+    ge.set_defaults(func=cmd_genre)
     jc = sub.add_parser("jpcheck", help="한국·미국 인기 쇼츠의 일본판이 있는지 확인 (Claude 사용)")
     jc.add_argument("--region", choices=["KR", "US"], default="KR", help="어느 나라에서 뜬 쇼츠를 볼지")
     jc.add_argument("--keywords", nargs="+", help="그 나라에서 이 키워드로 검색 (없으면 인기 차트 사용)")
